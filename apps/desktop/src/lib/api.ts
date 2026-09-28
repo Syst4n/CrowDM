@@ -62,6 +62,7 @@ export interface Progress {
   eta: number | null;
   connections: number;
   phase: string | null;
+  segments: [number, number, number][];
 }
 
 export type EngineEvent =
@@ -198,6 +199,7 @@ export const api = {
   captureSetUrl: (key: string, url: string) => invoke<void>("capture_set_url", { key, url }),
   captureAccept: (key: string, options: AcceptOptions) => invoke<string>("capture_accept", { key, options }),
   captureToBrowser: (key: string) => invoke<void>("capture_to_browser", { key }),
+  captureRendered: (key: string) => invoke<void>("capture_rendered", { key }),
   captureDismiss: (key: string) => invoke<void>("capture_dismiss", { key }),
   categoryDir: (category: string) => invoke<string>("category_dir", { category }),
   showMainWindow: () => invoke<void>("show_main_window"),

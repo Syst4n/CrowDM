@@ -118,7 +118,8 @@ pub struct Settings {
     pub notify_on_complete: bool,
     /// Show the confirmation dialog for captured downloads (off = start silently).
     pub confirm_captured: bool,
-    /// Keep the capture dialog window pre-loaded for instant display (uses more RAM).
+    /// Keep the capture dialog loaded at all times (instant display, ~150 MB).
+    /// When off it is loaded on demand and kept for a while after each use.
     pub prewarm_dialog: bool,
     /// Play a sound on completion.
     pub sound_on_complete: bool,
@@ -147,7 +148,7 @@ impl Default for Settings {
             start_minimized: false,
             notify_on_complete: true,
             confirm_captured: true,
-            prewarm_dialog: true,
+            prewarm_dialog: false,
             sound_on_complete: false,
         }
     }

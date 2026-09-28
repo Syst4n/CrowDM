@@ -14,6 +14,7 @@ pub const BROWSERS: &[(&str, &str, bool)] = &[
     ("edge", r"Software\Microsoft\Edge\NativeMessagingHosts", false),
     ("chromium", r"Software\Chromium\NativeMessagingHosts", false),
     ("brave", r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts", false),
+    ("chrome-for-testing", r"Software\Google\Chrome for Testing\NativeMessagingHosts", false),
     ("firefox", r"Software\Mozilla\NativeMessagingHosts", true),
 ];
 

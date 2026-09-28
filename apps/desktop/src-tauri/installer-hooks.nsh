@@ -18,6 +18,7 @@
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.crowdm.host"
   DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\com.crowdm.host"
   DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.crowdm.host"
+  DeleteRegKey HKCU "Software\Google\Chrome for Testing\NativeMessagingHosts\com.crowdm.host"
   DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\com.crowdm.host"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "CrowDM"
   DeleteRegKey HKCU "Software\CrowDM"

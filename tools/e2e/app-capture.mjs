@@ -152,11 +152,12 @@ async function main() {
   const hello = await fb.waitFor((m) => m.type === "hello");
   check("host relays hello", hello.protocol === 1, `app ${hello.appVersion}`);
 
-  const dialog = await pageFor(cdp, (u) => u.includes("#capture"));
   const t0 = performance.now();
   fb.send(capture("r1", `${SERVER}/file?size=67108864&etag=e2e&name=e2e-video.mp4&mime=video%2Fmp4&rate=1500000&id=e2e1`));
   const received = await fb.waitFor((m) => m.type === "received" && m.replyTo === "r1");
   check("app acknowledges a capture", true, `${(received.at - t0).toFixed(0)} ms`);
+  // The dialog window is created on demand for the first capture.
+  const dialog = await pageFor(cdp, (u) => u.includes("#capture"));
   await dialog.waitForSelector(".capture-head .title", { timeout: 5000 });
   const visibleAt = performance.now();
   const visible = await dialog.evaluate(() => document.visibilityState);

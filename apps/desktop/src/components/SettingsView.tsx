@@ -84,8 +84,8 @@ function General({ s, save }: P) {
       <Check
         checked={s.prewarmDialog}
         onChange={(v) => save({ prewarmDialog: v })}
-        title="Keep the download dialog ready"
-        hint="Opens the dialog instantly for browser downloads, at the cost of some memory."
+        title="Keep the download dialog loaded at all times"
+        hint="The dialog then appears in about 30 ms even after a quiet period, instead of about half a second, but CrowDM uses about 150 MB more memory while idle."
       />
     </section>
   );

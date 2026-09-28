@@ -89,6 +89,16 @@ pub fn capture_to_browser(state: State<AppState>, key: Uuid) {
     captures::to_browser(&state, key)
 }
 
+/// Called by the dialog after it has painted a capture; logs the latency
+/// from receiving the capture to showing it (see docs/PERFORMANCE.md).
+#[tauri::command]
+pub fn capture_rendered(state: State<AppState>, key: Uuid) {
+    let caps = state.captures.lock();
+    if let Some(c) = caps.iter().find(|c| c.key == key) {
+        tracing::info!(target: "latency", "capture dialog painted {} ms after the capture arrived", crowdm_engine::now_ms() - c.received_at);
+    }
+}
+
 #[tauri::command]
 pub fn capture_dismiss(state: State<AppState>, key: Uuid) {
     captures::dismiss(&state, key)

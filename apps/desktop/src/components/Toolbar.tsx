@@ -1,4 +1,4 @@
-import { FolderOpen, MagnifyingGlass, Pause, Play, Plus, Queue, Stop, Trash } from "@phosphor-icons/react";
+import { FolderOpen, HandPalm, MagnifyingGlass, Pause, Play, Plus, Queue, Trash } from "@phosphor-icons/react";
 import { api, errorText } from "../lib/api";
 import { useStore } from "../lib/store";
 
@@ -40,7 +40,7 @@ export function Toolbar({ onRemove }: { onRemove: (ids: string[]) => void }) {
         onClick={() => run(api.setQueueRunning(!queueRunning))}
         title={queueRunning ? "Queued downloads start automatically. Click to hold them." : "Queued downloads are on hold. Click to start them."}
       >
-        {queueRunning ? <Stop size={16} /> : <Queue size={16} />}
+        {queueRunning ? <HandPalm size={16} /> : <Queue size={16} />}
         {queueRunning ? "Hold queue" : "Start queue"}
       </button>
       <div className="spacer" />

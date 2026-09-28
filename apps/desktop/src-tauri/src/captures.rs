@@ -150,6 +150,24 @@ fn spawn_probe(state: AppState, key: Uuid) {
             }
         };
         let result = state.engine.probe(req).await;
+        // The browser often learns the real file name only from the server
+        // (Content-Disposition), so exclusion rules are checked again here.
+        if let Ok(info) = &result {
+            let excluded = {
+                let caps = state.captures.lock();
+                caps.iter().find(|c| c.key == key).is_some_and(|c| {
+                    c.capture.kind == CaptureKind::Intercepted && is_excluded(&state.engine.settings(), &info.file_name, info.size)
+                })
+            };
+            if excluded {
+                tracing::info!("{} matches an exclusion rule; leaving it to the browser", info.file_name);
+                if let Some(id) = info.probe_id {
+                    state.engine.discard_probe(id);
+                }
+                to_browser(&state, key);
+                return;
+            }
+        }
         {
             let mut caps = state.captures.lock();
             match caps.iter_mut().find(|c| c.key == key) {
@@ -175,6 +193,13 @@ fn spawn_probe(state: AppState, key: Uuid) {
         }
         changed(&state);
     });
+}
+
+fn is_excluded(settings: &crowdm_engine::Settings, file_name: &str, size: Option<u64>) -> bool {
+    let i = &settings.interception;
+    let ext = std::path::Path::new(file_name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    (!ext.is_empty() && i.excluded_extensions.iter().any(|x| x.eq_ignore_ascii_case(&ext)))
+        || (i.min_size > 0 && size.is_some_and(|s| s < i.min_size))
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

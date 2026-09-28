@@ -165,6 +165,7 @@ fn main() {
             commands::capture_accept,
             commands::capture_to_browser,
             commands::capture_dismiss,
+            commands::capture_rendered,
             commands::category_dir,
             commands::show_main_window,
             commands::pause_jobs,

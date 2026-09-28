@@ -29,6 +29,18 @@ export function CaptureDialog() {
   }, []);
 
   const current = captures[0];
+  const hasCurrent = !!current && !!settings;
+  useEffect(() => {
+    // A freshly created dialog window starts hidden; show it once painted.
+    if (!hasCurrent) return;
+    requestAnimationFrame(async () => {
+      const w = getCurrentWindow();
+      if (!(await w.isVisible())) {
+        await w.show();
+        await w.setFocus();
+      }
+    });
+  }, [hasCurrent]);
   if (!current || !settings) {
     return <div className="capture" />;
   }
@@ -64,6 +76,11 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
   useEffect(() => {
     if (!needsUrl) startRef.current?.focus();
   }, [needsUrl]);
+
+  // Report when this capture is actually on screen (latency diagnostics).
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => api.captureRendered(c.key).catch(() => {})));
+  }, [c.key]);
 
   const onCategory = async (id: string) => {
     setCategory(id);

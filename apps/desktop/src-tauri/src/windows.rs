@@ -1,11 +1,24 @@
-//! Window creation. The capture dialog can be kept pre-loaded (hidden) so it
-//! appears instantly; the main window is destroyed when closed to the tray
-//! to give its memory back.
+//! Window creation.
+//!
+//! The capture dialog is the latency-critical window. WebView2 needs about
+//! half a second to create a window from scratch but only ~30 ms to show one
+//! that is already loaded, while a loaded window costs ~110-150 MB. So the
+//! dialog is kept loaded for a while after each use (downloads come in
+//! bursts) and released when idle, unless the user asks to keep it loaded
+//! permanently. The main window is destroyed when closed to the tray.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const MAIN: &str = "main";
 pub const CAPTURE: &str = "capture";
+
+/// How long an unused capture dialog stays loaded.
+const KEEP_DIALOG: Duration = Duration::from_secs(10 * 60);
+
+static HIDE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
@@ -19,16 +32,18 @@ pub fn show_main(app: &AppHandle) {
         .inner_size(1180.0, 720.0)
         .min_inner_size(820.0, 520.0)
         .center()
-        .visible(false) // shown by the page once it has painted, avoiding a white flash
+        .visible(false) // the page shows it after its first paint, avoiding a blank flash
         .build();
     if let Err(e) = built {
         tracing::error!("could not create main window: {e}");
     }
 }
 
-pub fn ensure_capture(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+/// Returns the capture window, creating it (hidden) if needed, and whether
+/// it was just created.
+fn ensure_capture_inner(app: &AppHandle) -> Option<(tauri::WebviewWindow, bool)> {
     if let Some(w) = app.get_webview_window(CAPTURE) {
-        return Some(w);
+        return Some((w, false));
     }
     WebviewWindowBuilder::new(app, CAPTURE, WebviewUrl::App("index.html#capture".into()))
         .title("New download")
@@ -43,22 +58,51 @@ pub fn ensure_capture(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .build()
         .map_err(|e| tracing::error!("could not create capture window: {e}"))
         .ok()
+        .map(|w| (w, true))
 }
 
+/// Pre-loads the capture dialog without showing it.
+pub fn ensure_capture(app: &AppHandle) {
+    ensure_capture_inner(app);
+}
+
+/// Shows the capture dialog. A freshly created dialog shows itself once its
+/// page has painted (see CaptureDialog.tsx), so there is no blank window.
 pub fn show_capture(app: &AppHandle) {
-    if let Some(w) = ensure_capture(app) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
+    HIDE_GENERATION.fetch_add(1, Ordering::SeqCst);
+    let app = app.clone();
+    // Window creation waits on the UI thread; keep it off the pipe handler
+    // so the browser gets its acknowledgement immediately.
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some((w, created)) = ensure_capture_inner(&app) {
+            if !created {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
+    });
 }
 
 pub fn hide_capture(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(CAPTURE) {
-        let _ = w.hide();
-        let prewarm = app.try_state::<crate::state::AppState>().map(|s| s.engine.settings().prewarm_dialog).unwrap_or(true);
-        if !prewarm {
-            let _ = w.destroy();
-        }
+    let Some(w) = app.get_webview_window(CAPTURE) else { return };
+    let _ = w.hide();
+    let keep_forever = app.try_state::<crate::state::AppState>().map(|s| s.engine.settings().prewarm_dialog).unwrap_or(false);
+    if keep_forever {
+        return;
     }
+    let generation = HIDE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(KEEP_DIALOG).await;
+        if HIDE_GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        if let Some(w) = app.get_webview_window(CAPTURE) {
+            if !w.is_visible().unwrap_or(true) {
+                tracing::info!("releasing the idle capture dialog");
+                let _ = w.destroy();
+            }
+        }
+    });
 }

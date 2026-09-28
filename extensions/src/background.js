@@ -11,8 +11,6 @@ const VERSION = B.runtime.getManifest().version;
 
 // How long to wait for the app to acknowledge a capture (covers a cold start).
 const RECEIVE_TIMEOUT_MS = 15000;
-// Chrome: how long to wait for onDeterminingFilename before sending anyway.
-const FILENAME_WAIT_MS = 1500;
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -313,11 +311,10 @@ B.downloads.onCreated.addListener((item) => {
         () => (p.paused = true),
         () => {},
       );
-      // Wait briefly for onDeterminingFilename, which carries the real name.
-      setTimeout(() => sendCapture(reqId, p.item), FILENAME_WAIT_MS);
-    } else {
-      sendCapture(reqId, item);
     }
+    // Send right away: the app asks the server for the name and size itself,
+    // so waiting for the browser's filename step would only add delay.
+    sendCapture(reqId, item);
   });
 });
 
@@ -328,8 +325,6 @@ if (B.downloads.onDeterminingFilename) {
     // Hold the filename decision (this also defers any Save As dialog)
     // until the app decides.
     p.suggest = () => suggest();
-    p.item = { ...p.item, ...item };
-    sendCapture(reqId, p.item);
     return true;
   });
 }

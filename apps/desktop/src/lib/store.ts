@@ -80,6 +80,7 @@ export const useStore = create<State>((set, get) => ({
             eta: p.eta,
             connections: p.connections,
             phase: p.phase,
+            segments: p.segments,
           };
         }
         set({ jobs });

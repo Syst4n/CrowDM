@@ -1023,6 +1023,7 @@ impl Engine {
                     eta,
                     connections: run.shared.connections.load(Ordering::Relaxed),
                     phase: phase_outside.or_else(|| run.shared.phase.lock().clone()),
+                    segments: run.shared.segments().iter().map(|s| (s.start, s.end, s.done())).collect(),
                 });
             }
         }

@@ -228,6 +228,8 @@ pub struct Progress {
     pub eta: Option<u64>,
     pub connections: u32,
     pub phase: Option<String>,
+    /// (start, end, done) per segment, for the transfer map.
+    pub segments: Vec<(u64, u64, u64)>,
 }
 
 /// Input for creating a job.
