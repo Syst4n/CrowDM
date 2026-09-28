@@ -1,0 +1,6 @@
+{
+  "name": "crowdm-e2e",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "playwright-core": "1.63.0" }
+}

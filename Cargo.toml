@@ -2,10 +2,10 @@
 resolver = "2"
 members = [
     "crates/engine",
-    # "crates/ipc",
-    # "crates/host",
+    "crates/ipc",
+    "crates/host",
     "crates/testserver",
-    # "apps/desktop/src-tauri",
+    "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

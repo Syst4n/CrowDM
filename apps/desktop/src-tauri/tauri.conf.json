@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CrowDM",
+  "mainBinaryName": "CrowDM",
+  "version": "0.1.0",
+  "identifier": "io.github.syst4n.crowdm",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "CrowDM contributors",
+    "copyright": "CrowDM contributors",
+    "category": "Utility",
+    "shortDescription": "Fast, dependable download manager for Windows",
+    "longDescription": "CrowDM catches downloads from Chrome, Edge and Firefox and manages them with multi-connection transfers, pause and resume, queues and schedules.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "externalBin": ["binaries/crowdm-host"],
+    "resources": { "../../../extensions/build/chromium": "extensions/chromium", "../../../extensions/build/firefox": "extensions/firefox" },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
+  }
+}

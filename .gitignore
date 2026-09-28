@@ -21,3 +21,6 @@ extensions/build/
 .env.*
 .DS_Store
 Thumbs.db
+
+# Tauri sidecar copies (built by scripts/prepare-sidecar.mjs)
+apps/desktop/src-tauri/binaries/

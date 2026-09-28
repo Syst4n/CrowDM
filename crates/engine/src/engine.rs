@@ -107,6 +107,9 @@ struct PendingProbe {
 }
 
 struct Inner {
+    /// Runtime the engine was opened on; used so API calls work from any
+    /// thread (e.g. the UI thread), not only from inside the runtime.
+    rt: tokio::runtime::Handle,
     store: Store,
     jobs: Mutex<HashMap<JobId, Entry>>,
     settings: RwLock<Settings>,
@@ -149,6 +152,7 @@ impl Engine {
         let (events, _) = broadcast::channel(1024);
         let permits = settings.max_total_connections as usize;
         let inner = Arc::new(Inner {
+            rt: tokio::runtime::Handle::current(),
             store,
             jobs: Mutex::new(HashMap::new()),
             global_limit: Arc::new(RateLimiter::new(settings.speed_limit)),
@@ -234,7 +238,7 @@ impl Engine {
         } else if have > want {
             let sem = self.inner.connections.clone();
             let n = (have - want) as u32;
-            tokio::spawn(async move {
+            self.inner.rt.spawn(async move {
                 if let Ok(p) = sem.acquire_many_owned(n).await {
                     p.forget();
                 }
@@ -488,7 +492,7 @@ impl Engine {
         let _ = self.inner.store.save_job(&job);
         self.emit_job(id);
         let engine = self.clone();
-        tokio::spawn(async move {
+        self.inner.rt.spawn(async move {
             engine.drive(id, input, shared, cancel, limiter, reason).await;
             finished.store(true, Ordering::SeqCst);
             done.notify_waiters();
@@ -966,7 +970,7 @@ impl Engine {
 
     fn spawn_ticker(&self) {
         let weak = Arc::downgrade(&self.inner);
-        tokio::spawn(async move {
+        self.inner.rt.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_millis(500));
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut n: u64 = 0;
