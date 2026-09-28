@@ -140,6 +140,8 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
     return () => window.removeEventListener("keydown", onKey);
   }, [c.key, c.browserWaiting]);
 
+  // When CrowDM cannot get the real file, the browser's option leads.
+  const preferBrowser = !!c.browserRecommended && c.browserWaiting;
   const size = p?.size ?? c.size;
   const source = fmt.host(c.pageUrl ?? c.finalUrl ?? c.url);
   const browserName = c.browser ? BROWSER[c.browser] ?? c.browser : null;
@@ -279,7 +281,11 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
 
       <div className="capture-foot">
         {c.browserWaiting ? (
-          <button className="btn ghost" onClick={() => api.captureToBrowser(c.key)} title="Let the browser finish this download itself">
+          <button
+            className={`btn ${preferBrowser ? "primary" : "ghost"}`}
+            onClick={() => api.captureToBrowser(c.key)}
+            title="Let the browser finish this download itself"
+          >
             Download in {browserName ?? "browser"}
           </button>
         ) : (
@@ -294,7 +300,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
             <button className="btn" disabled={busy} onClick={() => accept(false)} title="Start when the queue has a free slot">
               Add to queue
             </button>
-            <button ref={startRef} className="btn primary" disabled={busy} onClick={() => accept(true)}>
+            <button ref={startRef} className={`btn ${preferBrowser ? "" : "primary"}`} disabled={busy} onClick={() => accept(true)}>
               Start download
             </button>
           </>
