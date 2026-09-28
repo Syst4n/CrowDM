@@ -70,7 +70,10 @@ impl PendingCapture {
             }
             let browser_html = c.mime.as_deref().is_some_and(|m| m.contains("html"));
             if p.looks_like_html && !browser_html {
-                recommend = Some("The server answered CrowDM with a web page instead of the file. This link probably only works inside the browser.".to_string());
+                recommend = Some(
+                    "The server answered CrowDM with a web page instead of the file. This link probably only works inside the browser."
+                        .to_string(),
+                );
             }
         }
         if self.probe_error.is_some() && c.kind == CaptureKind::Intercepted {

@@ -234,7 +234,9 @@ fn connected(state: &AppState) -> Vec<ConnectedBrowser> {
         .conns
         .lock()
         .values()
-        .filter_map(|c| Some(ConnectedBrowser { browser: c.browser.clone()?, extension_version: c.extension_version.clone().unwrap_or_default() }))
+        .filter_map(|c| {
+            Some(ConnectedBrowser { browser: c.browser.clone()?, extension_version: c.extension_version.clone().unwrap_or_default() })
+        })
         .collect()
 }
 
@@ -287,7 +289,11 @@ pub async fn memory_usage() -> Vec<ProcessMemory> {
     #[cfg(windows)]
     {
         tauri::async_runtime::spawn_blocking(|| {
-            platform::memory_report().into_iter().filter(|(_, name, _)| !matches!(name.as_str(), "powershell" | "conhost")).map(|(pid, name, private_bytes)| ProcessMemory { pid, name, private_bytes }).collect()
+            platform::memory_report()
+                .into_iter()
+                .filter(|(_, name, _)| !matches!(name.as_str(), "powershell" | "conhost"))
+                .map(|(pid, name, private_bytes)| ProcessMemory { pid, name, private_bytes })
+                .collect()
         })
         .await
         .unwrap_or_default()

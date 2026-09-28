@@ -10,8 +10,8 @@ mod state;
 mod tray;
 mod windows;
 
-use crowdm_engine::{Engine, EngineEvent, JobState};
 use crowdm_engine::settings::AfterQueue;
+use crowdm_engine::{Engine, EngineEvent, JobState};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 

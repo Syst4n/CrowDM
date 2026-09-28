@@ -30,9 +30,7 @@ pub fn on_capture(state: &AppState, conn: u64, request_id: String, browser: Stri
         }
         // Two browser downloads of the same URL within a few seconds are a
         // double click: keep the first, cancel the duplicate in the browser.
-        let dup = caps.iter().any(|c| {
-            c.capture.url == capture.url && now_ms() - c.received_at < 5_000 && c.capture.kind == capture.kind
-        });
+        let dup = caps.iter().any(|c| c.capture.url == capture.url && now_ms() - c.received_at < 5_000 && c.capture.kind == capture.kind);
         if dup && capture.kind == CaptureKind::Intercepted {
             drop(caps);
             state.send(conn, &ToBrowser::Decision { reply_to: request_id, decision: Decision::Cancel });
@@ -217,14 +215,21 @@ pub struct AcceptOptions {
 
 fn new_job_for(c: &PendingCapture, o: AcceptOptions) -> NewJob {
     let cap = &c.capture;
-    let checksum = o.checksum.as_deref().map(str::trim).filter(|s| !s.is_empty()).and_then(|h| {
-        crowdm_engine::checksum::guess_algo(h).map(|algo| Checksum { algo, expected: h.to_ascii_lowercase() })
-    });
+    let checksum = o
+        .checksum
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|h| crowdm_engine::checksum::guess_algo(h).map(|algo| Checksum { algo, expected: h.to_ascii_lowercase() }));
     NewJob {
         url: cap.url.clone(),
         referrer: cap.referrer.clone().or_else(|| cap.page_url.clone()),
         headers: cap.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect(),
-        file_name: o.file_name.filter(|n| !n.trim().is_empty()).or_else(|| c.probe.as_ref().map(|p| p.file_name.clone())).or(cap.file_name.clone()),
+        file_name: o
+            .file_name
+            .filter(|n| !n.trim().is_empty())
+            .or_else(|| c.probe.as_ref().map(|p| p.file_name.clone()))
+            .or(cap.file_name.clone()),
         dir: o.dir.filter(|d| !d.trim().is_empty()).map(Into::into),
         category: o.category,
         start: o.start,
@@ -300,7 +305,8 @@ pub fn dismiss(state: &AppState, key: Uuid) {
 pub fn forget_conn(state: &AppState, conn: u64) {
     let removed: Vec<PendingCapture> = {
         let mut caps = state.captures.lock();
-        let (gone, keep): (Vec<_>, Vec<_>) = caps.drain(..).partition(|c| c.conn == Some(conn) && c.capture.kind == CaptureKind::Intercepted);
+        let (gone, keep): (Vec<_>, Vec<_>) =
+            caps.drain(..).partition(|c| c.conn == Some(conn) && c.capture.kind == CaptureKind::Intercepted);
         *caps = keep;
         gone
     };

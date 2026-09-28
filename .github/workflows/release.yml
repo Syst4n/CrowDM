@@ -1,0 +1,49 @@
+name: Release
+
+# Builds the installer, a portable zip and the extension folders when a tag
+# like v0.1.0 is pushed, and attaches them to a draft GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - name: Build
+        run: |
+          node scripts/prepare-sidecar.mjs --release
+          pnpm --dir apps/desktop install --frozen-lockfile
+          pnpm --dir apps/desktop tauri build
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}"
+          New-Item -ItemType Directory dist-release | Out-Null
+          Copy-Item target/release/bundle/nsis/*.exe dist-release/
+          New-Item -ItemType Directory portable | Out-Null
+          Copy-Item target/release/CrowDM.exe, target/release/crowdm-host.exe portable/
+          New-Item -ItemType File portable/portable | Out-Null
+          Copy-Item -Recurse extensions/build portable/extensions
+          Compress-Archive portable/* "dist-release/CrowDM_${v}_x64-portable.zip"
+          Compress-Archive extensions/build/chromium/* "dist-release/CrowDM_${v}_chromium-extension.zip"
+          Compress-Archive extensions/build/firefox/* "dist-release/CrowDM_${v}_firefox-extension.zip"
+          Get-ChildItem dist-release | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash, $_.Name } | Out-File dist-release/SHA256SUMS.txt -Encoding ascii
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist-release/*

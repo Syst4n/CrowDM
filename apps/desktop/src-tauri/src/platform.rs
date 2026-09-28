@@ -163,7 +163,8 @@ mod imp {
         }
         let op = wide(std::ffi::OsStr::new("open"));
         let file = wide(path.as_os_str());
-        let r = unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+        let r =
+            unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
         if (r as isize) <= 32 {
             return Err("Windows could not open this file.".into());
         }
