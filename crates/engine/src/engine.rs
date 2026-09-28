@@ -30,12 +30,24 @@ use crate::transfer::{self, Hooks, Identity, Limits, Shared, Stop, TransferConfi
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum EngineEvent {
-    JobUpdated { job: Box<JobSnapshot> },
-    JobRemoved { id: JobId },
-    Progress { items: Vec<Progress> },
-    JobCompleted { job: Box<JobSnapshot> },
-    JobFailed { job: Box<JobSnapshot> },
-    QueueChanged { running: bool },
+    JobUpdated {
+        job: Box<JobSnapshot>,
+    },
+    JobRemoved {
+        id: JobId,
+    },
+    Progress {
+        items: Vec<Progress>,
+    },
+    JobCompleted {
+        job: Box<JobSnapshot>,
+    },
+    JobFailed {
+        job: Box<JobSnapshot>,
+    },
+    QueueChanged {
+        running: bool,
+    },
     /// The queue ran out of work after having run something.
     QueueFinished,
 }
@@ -125,6 +137,8 @@ struct Inner {
     queue_did_work: AtomicBool,
     shutting_down: AtomicBool,
     schedule_state: Mutex<ScheduleState>,
+    /// Connection limits servers enforced recently, by host name.
+    host_limits: Mutex<HashMap<String, (usize, Instant)>>,
 }
 
 #[derive(Default)]
@@ -167,6 +181,7 @@ impl Engine {
             queue_did_work: AtomicBool::new(false),
             shutting_down: AtomicBool::new(false),
             schedule_state: Mutex::new(ScheduleState::default()),
+            host_limits: Mutex::new(HashMap::new()),
         });
         let engine = Engine { inner };
         engine.load()?;
@@ -304,13 +319,7 @@ impl Engine {
         validate_url(&req.url)?;
         let client = self.inner.client.read().clone();
         let headers = http::header_map(&req.headers, req.referrer.as_deref());
-        let resp = client
-            .get(&req.url)
-            .headers(headers)
-            .header(header::RANGE, "bytes=0-")
-            .send()
-            .await
-            .map_err(http::request_error)?;
+        let resp = client.get(&req.url).headers(headers).header(header::RANGE, "bytes=0-").send().await.map_err(http::request_error)?;
         if !resp.status().is_success() {
             return Err(http::status_error(&resp).into());
         }
@@ -334,7 +343,8 @@ impl Engine {
         if size.is_none() {
             warnings.push("The server did not report the file size.".into());
         }
-        if meta.looks_like_html() && !file_name.to_ascii_lowercase().ends_with(".html") && !file_name.to_ascii_lowercase().ends_with(".htm") {
+        if meta.looks_like_html() && !file_name.to_ascii_lowercase().ends_with(".html") && !file_name.to_ascii_lowercase().ends_with(".htm")
+        {
             warnings.push("The server answered with a web page, not a file. The link may need the browser's session.".into());
         }
         let exists = dir.join(&file_name).exists();
@@ -381,7 +391,11 @@ impl Engine {
                 mime.as_deref(),
             ),
         };
-        let category = new.category.clone().filter(|c| settings.categories.iter().any(|x| &x.id == c)).unwrap_or_else(|| settings.category_for(&file_name));
+        let category = new
+            .category
+            .clone()
+            .filter(|c| settings.categories.iter().any(|x| &x.id == c))
+            .unwrap_or_else(|| settings.category_for(&file_name));
         let dir = new.dir.clone().unwrap_or_else(|| settings.dir_for_category(&category));
         let target = if new.overwrite { dir.join(&file_name) } else { names::unique_path(&dir, &file_name, &self.taken_targets()) };
         let final_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(file_name);
@@ -453,7 +467,7 @@ impl Engine {
                 return Ok(());
             }
             let settings = self.inner.settings.read();
-            let max_conns = entry.job.max_connections.map(|c| c as usize).unwrap_or(settings.max_connections_per_download as usize).clamp(1, 32);
+            let max_conns = self.connection_target(&entry.job, &settings);
             let job = &mut entry.job;
             job.state = JobState::Downloading;
             job.error = None;
@@ -522,10 +536,12 @@ impl Engine {
                 },
                 ..TransferConfig::default()
             };
-            let limits = Limits { global: self.inner.global_limit.clone(), job: limiter.clone(), connections: self.inner.connections.clone() };
+            let limits =
+                Limits { global: self.inner.global_limit.clone(), job: limiter.clone(), connections: self.inner.connections.clone() };
             let client = self.inner.client.read().clone();
             let hooks = self.hooks(id);
             let res = transfer::run(client, input, shared.clone(), limits, cfg, cancel.clone(), hooks).await;
+            self.learn_host_limit(id, &shared);
             match res {
                 Ok(done) => {
                     break self.finalize(id, done, &shared).await;
@@ -538,7 +554,10 @@ impl Engine {
                             Some(entry) if e.kind.is_retryable() && entry.job.auto_retries < settings.retry_attempts => {
                                 entry.job.auto_retries += 1;
                                 let n = entry.job.auto_retries;
-                                entry.phase = Some(format!("Retrying in {}s (attempt {n} of {})", settings.retry_delay_secs, settings.retry_attempts));
+                                entry.phase = Some(format!(
+                                    "Retrying in {}s (attempt {n} of {})",
+                                    settings.retry_delay_secs, settings.retry_attempts
+                                ));
                                 entry.job.error = Some(e.to_job_error());
                                 true
                             }
@@ -560,7 +579,7 @@ impl Engine {
                         let Some(entry) = jobs.get_mut(&id) else { break Err(Stop::Canceled) };
                         entry.phase = None;
                         let job = &entry.job;
-                        let max_conns = job.max_connections.map(|c| c as usize).unwrap_or(settings.max_connections_per_download as usize);
+                        let max_conns = self.connection_target(job, &settings);
                         let new_shared = Shared::new(&entry.segments, job.size, job.resumable.unwrap_or(false), max_conns);
                         if let Some(run) = entry.run.as_mut() {
                             run.shared = new_shared.clone();
@@ -692,6 +711,30 @@ impl Engine {
         }
     }
 
+    /// Connections to use for a job: its own or the global setting, capped by
+    /// a limit the same server enforced within the last hour.
+    fn connection_target(&self, job: &Job, settings: &Settings) -> usize {
+        let wanted = job.max_connections.map(|c| c as usize).unwrap_or(settings.max_connections_per_download as usize).clamp(1, 32);
+        let host = host_of(job.final_url.as_deref().unwrap_or(&job.url));
+        let limits = self.inner.host_limits.lock();
+        match limits.get(&host) {
+            Some((n, at)) if at.elapsed() < Duration::from_secs(3600) => wanted.min(*n).max(1),
+            _ => wanted,
+        }
+    }
+
+    fn learn_host_limit(&self, id: JobId, shared: &Shared) {
+        let n = shared.limited_to.load(Ordering::Relaxed);
+        if n == 0 {
+            return;
+        }
+        let url = self.inner.jobs.lock().get(&id).map(|e| e.job.final_url.clone().unwrap_or_else(|| e.job.url.clone()));
+        if let Some(url) = url {
+            tracing::info!("{} accepts at most {n} connections; remembering that for an hour", host_of(&url));
+            self.inner.host_limits.lock().insert(host_of(&url), (n, Instant::now()));
+        }
+    }
+
     async fn finalize(&self, id: JobId, done: transfer::Completed, shared: &Arc<Shared>) -> Result<(), Stop> {
         let (part, target, checksum, overwrite) = {
             let jobs = self.inner.jobs.lock();
@@ -709,11 +752,15 @@ impl Engine {
             file.clear_sparse();
             drop(file);
             if let Some(c) = &checksum {
-                let actual = checksum::file_digest(&part, c.algo).map_err(|e| TransferError::io("Could not read the file to verify it", e))?;
+                let actual =
+                    checksum::file_digest(&part, c.algo).map_err(|e| TransferError::io("Could not read the file to verify it", e))?;
                 if !actual.eq_ignore_ascii_case(c.expected.trim()) {
                     return Err(TransferError::new(
                         ErrorKind::ChecksumMismatch,
-                        format!("Checksum mismatch: expected {}, got {actual}. The file was kept with a .crowdm-part extension.", c.expected.trim()),
+                        format!(
+                            "Checksum mismatch: expected {}, got {actual}. The file was kept with a .crowdm-part extension.",
+                            c.expected.trim()
+                        ),
                     ));
                 }
             }
@@ -765,16 +812,28 @@ impl Engine {
     }
 
     pub fn pause_all(&self) {
-        let ids: Vec<JobId> =
-            self.inner.jobs.lock().values().filter(|e| matches!(e.job.state, JobState::Downloading | JobState::Queued)).map(|e| e.job.id).collect();
+        let ids: Vec<JobId> = self
+            .inner
+            .jobs
+            .lock()
+            .values()
+            .filter(|e| matches!(e.job.state, JobState::Downloading | JobState::Queued))
+            .map(|e| e.job.id)
+            .collect();
         for id in ids {
             let _ = self.pause(id);
         }
     }
 
     pub fn resume_all(&self) {
-        let ids: Vec<JobId> =
-            self.inner.jobs.lock().values().filter(|e| matches!(e.job.state, JobState::Paused | JobState::Failed)).map(|e| e.job.id).collect();
+        let ids: Vec<JobId> = self
+            .inner
+            .jobs
+            .lock()
+            .values()
+            .filter(|e| matches!(e.job.state, JobState::Paused | JobState::Failed))
+            .map(|e| e.job.id)
+            .collect();
         for id in ids {
             let _ = self.start(id);
         }
@@ -949,7 +1008,8 @@ impl Engine {
         let (to_start, idle) = {
             let jobs = self.inner.jobs.lock();
             let active = jobs.values().filter(|e| e.job.queued && e.run.is_some()).count();
-            let mut waiting: Vec<&Entry> = jobs.values().filter(|e| e.job.queued && e.job.state == JobState::Queued && e.run.is_none()).collect();
+            let mut waiting: Vec<&Entry> =
+                jobs.values().filter(|e| e.job.queued && e.job.state == JobState::Queued && e.run.is_none()).collect();
             waiting.sort_by_key(|e| (e.job.queue_order, e.job.created_at));
             let n = limit.saturating_sub(active);
             let to_start: Vec<JobId> = waiting.iter().take(n).map(|e| e.job.id).collect();
@@ -1119,6 +1179,10 @@ fn schedule_window_open(s: &crate::settings::Schedule) -> bool {
     }
 }
 
+fn host_of(url: &str) -> String {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default()
+}
+
 fn validate_url(url: &str) -> Result<()> {
     let parsed = url::Url::parse(url.trim()).map_err(|_| EngineError::Invalid("That doesn't look like a valid web address.".into()))?;
     match parsed.scheme() {
@@ -1138,9 +1202,19 @@ fn snapshot(e: &Entry) -> JobSnapshot {
                 _ => None,
             };
             let segs = run.shared.segments().iter().map(|s| (s.start, s.end, s.done())).collect();
-            (sp, eta, run.shared.connections.load(Ordering::Relaxed), e.phase.clone().or_else(|| run.shared.phase.lock().clone()), segs, d, size)
+            (
+                sp,
+                eta,
+                run.shared.connections.load(Ordering::Relaxed),
+                e.phase.clone().or_else(|| run.shared.phase.lock().clone()),
+                segs,
+                d,
+                size,
+            )
         }
-        None => (0, None, 0, e.phase.clone(), e.segments.iter().map(|s| (s.start, s.end, s.done())).collect(), e.job.downloaded, e.job.size),
+        None => {
+            (0, None, 0, e.phase.clone(), e.segments.iter().map(|s| (s.start, s.end, s.done())).collect(), e.job.downloaded, e.job.size)
+        }
     };
     let mut job = e.job.clone();
     job.downloaded = downloaded;

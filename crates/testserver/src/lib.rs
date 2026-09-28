@@ -25,6 +25,7 @@
 //! | `mime=M`       | `Content-Type` (default `application/octet-stream`)           |
 //! | `maxconn=C`    | answer `503` when more than C bodies of this `id` are active  |
 //! | `lengthlie=N`  | advertise a `Content-Length`/total of N while serving `size`  |
+//! | `stallfirst=K` | the first K mid-file ranged requests hang for 60 s            |
 //!
 //! Other routes: `/redirect?n=K&to=<path>` (302 chain), `/status?code=C`,
 //! `/bump?id=KEY` (changes the resource version, i.e. "the file changed on the
@@ -60,6 +61,7 @@ struct ResourceState {
     requests: u64,
     ranged_requests: u64,
     drops_used: u64,
+    stalls_used: u64,
     active: u64,
     max_active: u64,
 }
@@ -105,10 +107,7 @@ impl TestServer {
                 let shared = shared.clone();
                 tokio::spawn(async move {
                     let svc = service_fn(move |req| handle(req, shared.clone(), addr));
-                    let _ = hyper::server::conn::http1::Builder::new()
-                        .keep_alive(true)
-                        .serve_connection(TokioIo::new(stream), svc)
-                        .await;
+                    let _ = hyper::server::conn::http1::Builder::new().keep_alive(true).serve_connection(TokioIo::new(stream), svc).await;
                 });
             }
         });
@@ -132,12 +131,7 @@ impl TestServer {
     pub fn stats(&self, id: &str) -> Stats {
         let map = self.shared.resources.lock();
         map.get(id)
-            .map(|s| Stats {
-                requests: s.requests,
-                ranged_requests: s.ranged_requests,
-                max_active: s.max_active,
-                version: s.version,
-            })
+            .map(|s| Stats { requests: s.requests, ranged_requests: s.ranged_requests, max_active: s.max_active, version: s.version })
             .unwrap_or_default()
     }
 
@@ -166,7 +160,24 @@ async fn handle(req: Request<Incoming>, shared: Arc<Shared>, addr: SocketAddr) -
     let q = query_map(&req);
     let path = req.uri().path().to_string();
     let resp = match path.as_str() {
-        "/file" => serve_file(&req, &q, &shared),
+        "/file" => {
+            // `stallfirst=K`: the first K ranged requests that do not start at
+            // byte 0 get no answer for a minute (a frozen extra connection).
+            if let Some(k) = q.get("stallfirst").and_then(|v| v.parse::<u64>().ok()) {
+                let mid = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).is_some_and(|r| !r.starts_with("bytes=0-"));
+                let stall = mid && {
+                    let id = q.get("id").cloned().unwrap_or_default();
+                    let mut map = shared.resources.lock();
+                    let st = map.entry(id).or_default();
+                    st.stalls_used += 1;
+                    st.stalls_used <= k
+                };
+                if stall {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                }
+            }
+            serve_file(&req, &q, &shared)
+        }
         "/redirect" => {
             let n: u32 = q.get("n").and_then(|v| v.parse().ok()).unwrap_or(1);
             let to = q.get("to").cloned().unwrap_or_else(|| "/file?size=1024".into());

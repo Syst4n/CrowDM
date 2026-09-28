@@ -1,0 +1,176 @@
+[
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 1,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 5.329411,
+    "bytes": 104857600,
+    "mbPerSec": 18.76
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 1,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 5.279,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 14.8,
+    "mbPerSec": 18.94
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 1,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 4.252,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.8,
+    "mbPerSec": 23.52
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 2,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 5.749535500000002,
+    "bytes": 104857600,
+    "mbPerSec": 17.39
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 2,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 4.957,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 14.8,
+    "mbPerSec": 20.17
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 2,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 13.893,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.8,
+    "mbPerSec": 7.2
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 3,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 0.3832947000000058,
+    "bytes": 162,
+    "mbPerSec": 0
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 3,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 7.191,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 14.8,
+    "mbPerSec": 13.91
+  },
+  {
+    "file": "hetzner-fsn1-100MB",
+    "round": 3,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 7.489,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.2,
+    "mbPerSec": 13.35
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 1,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 3.6250518999999986,
+    "bytes": 104857600,
+    "mbPerSec": 27.59
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 1,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 5.465,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.3,
+    "mbPerSec": 18.3
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 1,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 5.969,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 16.1,
+    "mbPerSec": 16.75
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 2,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 0.40991079999999785,
+    "bytes": 1606,
+    "mbPerSec": 0
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 2,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 15.502,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.3,
+    "mbPerSec": 6.45
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 2,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 3.744,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.7,
+    "mbPerSec": 26.71
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 3,
+    "tool": "curl (1 connection)",
+    "ok": true,
+    "secs": 0.4008289000000077,
+    "bytes": 1606,
+    "mbPerSec": 0
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 3,
+    "tool": "CrowDM (1 connection)",
+    "ok": true,
+    "secs": 13.471,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.2,
+    "mbPerSec": 7.42
+  },
+  {
+    "file": "ovh-100Mb",
+    "round": 3,
+    "tool": "CrowDM (8 connections)",
+    "ok": true,
+    "secs": 13.071,
+    "bytes": 104857600,
+    "peakWorkingSetMb": 15.6,
+    "mbPerSec": 7.65
+  }
+]

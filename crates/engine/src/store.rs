@@ -47,10 +47,7 @@ impl Store {
              );
              CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
-        conn.execute(
-            "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)",
-            params![SCHEMA_VERSION.to_string()],
-        )?;
+        conn.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)", params![SCHEMA_VERSION.to_string()])?;
         Ok(Store { conn: Mutex::new(conn) })
     }
 
@@ -107,8 +104,7 @@ impl Store {
 
     pub fn load_settings(&self) -> Result<Option<Settings>> {
         let conn = self.conn.lock();
-        let v: Option<String> =
-            conn.query_row("SELECT value FROM settings WHERE key = 'settings'", [], |r| r.get(0)).optional()?;
+        let v: Option<String> = conn.query_row("SELECT value FROM settings WHERE key = 'settings'", [], |r| r.get(0)).optional()?;
         Ok(v.and_then(|s| serde_json::from_str(&s).ok()))
     }
 

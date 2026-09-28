@@ -1,0 +1,36 @@
+[
+  {
+    "prewarm": true,
+    "coldConnect": 375,
+    "ackMedian": 0.5,
+    "paintFirst": 41,
+    "paintMedian": 19,
+    "paintAll": [
+      41,
+      19,
+      18,
+      20,
+      18,
+      19,
+      21,
+      19
+    ]
+  },
+  {
+    "prewarm": false,
+    "coldConnect": 108,
+    "ackMedian": 0.5,
+    "paintFirst": 496,
+    "paintMedian": 19,
+    "paintAll": [
+      496,
+      18,
+      19,
+      21,
+      18,
+      18,
+      21,
+      19
+    ]
+  }
+]

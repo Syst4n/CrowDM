@@ -155,20 +155,13 @@ impl Default for Settings {
 }
 
 fn default_download_root() -> PathBuf {
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let home =
+        std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     home.join("Downloads").join("CrowDM")
 }
 
 fn cat(id: &str, name: &str, exts: &str) -> Category {
-    Category {
-        id: id.into(),
-        name: name.into(),
-        folder: name.into(),
-        extensions: exts.split_whitespace().map(str::to_string).collect(),
-    }
+    Category { id: id.into(), name: name.into(), folder: name.into(), extensions: exts.split_whitespace().map(str::to_string).collect() }
 }
 
 pub fn default_categories() -> Vec<Category> {
@@ -205,10 +198,7 @@ impl Settings {
 
     /// Category id for a file name, falling back to "other".
     pub fn category_for(&self, file_name: &str) -> String {
-        let ext = Path::new(file_name)
-            .extension()
-            .map(|e| e.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
+        let ext = Path::new(file_name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         if !ext.is_empty() {
             for c in &self.categories {
                 if c.extensions.iter().any(|x| *x == ext) {

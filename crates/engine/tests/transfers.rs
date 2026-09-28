@@ -225,6 +225,21 @@ async fn changed_remote_file_is_detected_on_resume() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stalled_connections_are_taken_over() {
+    let env = setup().await;
+    // Three extra connections never get an answer; the others must finish
+    // their segments instead of waiting for a timeout.
+    let url = env.server.url("/file?size=33554432&seed=41&etag=st&rate=4000000&stallfirst=3&id=stall&name=stall.bin");
+    let start = std::time::Instant::now();
+    let id = env.engine.add(job(url)).unwrap();
+    let snap = wait_done(&env.engine, id).await;
+    assert_eq!(snap.job.state, JobState::Completed, "{:?}", snap.job.error);
+    assert_content(&env.dir.path().join("stall.bin"), 41, 32 * MIB);
+    let secs = start.elapsed().as_secs_f64();
+    assert!(secs < 25.0, "took {secs:.1}s; stalled connections were waited for");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn missing_file_fails_without_retrying_forever() {
     let env = setup().await;
     let id = env.engine.add(job(env.server.url("/status?code=404"))).unwrap();

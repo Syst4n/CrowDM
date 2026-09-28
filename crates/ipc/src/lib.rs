@@ -97,10 +97,16 @@ pub enum FromBrowser {
     },
     /// The browser download we were deciding about went away (the user
     /// cancelled it in the browser, or it finished before we answered).
-    CaptureGone { id: String },
-    Ping { id: String },
+    CaptureGone {
+        id: String,
+    },
+    Ping {
+        id: String,
+    },
     /// Sent by a second copy of the app to the running one (single instance).
-    Activate { args: Vec<String> },
+    Activate {
+        args: Vec<String>,
+    },
 }
 
 /// What the extension should do with the paused browser download.
@@ -126,11 +132,24 @@ pub enum ToBrowser {
         settings: BrowserSettings,
     },
     /// The app received the capture and is showing it to the user.
-    Received { reply_to: String },
-    Decision { reply_to: String, decision: Decision },
-    Settings { settings: BrowserSettings },
-    Pong { reply_to: String },
-    Error { reply_to: Option<String>, code: String, message: String },
+    Received {
+        reply_to: String,
+    },
+    Decision {
+        reply_to: String,
+        decision: Decision,
+    },
+    Settings {
+        settings: BrowserSettings,
+    },
+    Pong {
+        reply_to: String,
+    },
+    Error {
+        reply_to: Option<String>,
+        code: String,
+        message: String,
+    },
 }
 
 /// Interception settings the extension enforces.

@@ -159,8 +159,16 @@ pub fn status_error(resp: &Response) -> TransferError {
 pub fn classify_status(status: StatusCode, retry_after: Option<Duration>) -> TransferError {
     let code = status.as_u16();
     let (kind, msg) = match code {
-        401 | 407 => (ErrorKind::AccessDenied, format!("The server requires authentication (HTTP {code}). Start the download from your browser so CrowDM receives its cookies.")),
-        403 => (ErrorKind::AccessDenied, "The server refused access (HTTP 403). The link may have expired; start it again from the page.".to_string()),
+        401 | 407 => (
+            ErrorKind::AccessDenied,
+            format!(
+                "The server requires authentication (HTTP {code}). Start the download from your browser so CrowDM receives its cookies."
+            ),
+        ),
+        403 => (
+            ErrorKind::AccessDenied,
+            "The server refused access (HTTP 403). The link may have expired; start it again from the page.".to_string(),
+        ),
         404 => (ErrorKind::NotFound, "The file was not found on the server (HTTP 404).".to_string()),
         410 => (ErrorKind::NotFound, "The file is no longer available (HTTP 410).".to_string()),
         408 | 425 | 429 | 500 | 502 | 503 | 504 => (ErrorKind::ServerBusy, format!("The server is busy or unavailable (HTTP {code}).")),

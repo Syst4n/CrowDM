@@ -36,11 +36,7 @@ pub fn from_content_disposition(value: &str) -> Option<String> {
         } else if key == "filename" {
             let s = unquote(v);
             // Some servers percent-encode plain filename values.
-            let decoded = if s.contains('%') {
-                percent_decode_str(&s).decode_utf8().map(|c| c.into_owned()).unwrap_or(s)
-            } else {
-                s
-            };
+            let decoded = if s.contains('%') { percent_decode_str(&s).decode_utf8().map(|c| c.into_owned()).unwrap_or(s) } else { s };
             if !decoded.trim().is_empty() {
                 plain = Some(decoded);
             }
@@ -117,8 +113,8 @@ pub fn from_url(url: &str) -> Option<String> {
 }
 
 const RESERVED: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
-    "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
+    "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Makes a name safe to use as a single Windows file-name component.

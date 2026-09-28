@@ -32,6 +32,10 @@ use crate::ratelimit::RateLimiter;
 
 pub const UNKNOWN_END: u64 = u64::MAX;
 
+/// A connection that has received nothing for this long may have the rest
+/// of its segment taken over by an idle connection.
+const STALL: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Clone)]
 pub struct TransferConfig {
     pub max_connections: usize,
@@ -69,6 +73,8 @@ struct Slot {
     active: bool,
     /// The connection serving this slot is a full `200` body from offset 0.
     full_body: bool,
+    /// Last time data arrived for this slot (or it was assigned).
+    last_progress: std::time::Instant,
 }
 
 #[derive(Debug)]
@@ -87,7 +93,7 @@ impl Inner {
     fn new_slot(&mut self, seg: Segment, active: bool, full_body: bool) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        self.slots.push(Slot { id, seg, active, full_body });
+        self.slots.push(Slot { id, seg, active, full_body, last_progress: std::time::Instant::now() });
         id
     }
     fn active_count(&self) -> usize {
@@ -102,6 +108,8 @@ pub struct Shared {
     pub received: AtomicU64,
     pub connections: AtomicU32,
     pub phase: Mutex<Option<String>>,
+    /// Connection count the server accepted after refusing more (0 = none).
+    pub limited_to: std::sync::atomic::AtomicUsize,
 }
 
 impl Shared {
@@ -115,6 +123,7 @@ impl Shared {
             received: AtomicU64::new(0),
             connections: AtomicU32::new(0),
             phase: Mutex::new(Some("Connecting".into())),
+            limited_to: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -355,7 +364,13 @@ pub async fn run(
                 tokio::time::sleep(Duration::from_millis(15)).await;
             }
         }
-        while set.join_next().await.is_some() {}
+        while set.join_next().await.is_some() {
+            // Connections that were taken over may still be waiting on a
+            // server that never answers; once every byte is in, drop them.
+            if shared.is_complete() {
+                set.abort_all();
+            }
+        }
 
         if ctx.cancel.is_cancelled() {
             break;
@@ -371,7 +386,11 @@ pub async fn run(
             rounds_without_progress += 1;
         }
         if rounds_without_progress >= 3 {
-            let e = ctx.last_error.lock().clone().unwrap_or_else(|| TransferError::new(ErrorKind::Network, "The download stopped making progress."));
+            let e = ctx
+                .last_error
+                .lock()
+                .clone()
+                .unwrap_or_else(|| TransferError::new(ErrorKind::Network, "The download stopped making progress."));
             ctx.fail(e);
             break;
         }
@@ -505,10 +524,30 @@ fn acquire_work(ctx: &Ctx) -> Work {
     }
     if let Some(s) = g.slots.iter_mut().find(|s| !s.active && !s.seg.is_complete()) {
         s.active = true;
+        s.last_progress = std::time::Instant::now();
         return Work::Slot(s.id);
     }
     if !g.ranges || g.size.is_none() {
         return Work::None;
+    }
+    // Take over the rest of a segment whose connection has stalled (a server
+    // that never answers an extra connection, or a connection that froze).
+    if let Some(i) = g
+        .slots
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.active && !s.seg.is_complete() && s.last_progress.elapsed() > STALL)
+        .max_by_key(|(_, s)| s.seg.remaining())
+        .map(|(i, _)| i)
+    {
+        let seg = &mut g.slots[i].seg;
+        let (from, to) = (seg.pos, seg.end);
+        // The stalled connection's segment ends where it stopped; anything
+        // it still delivers is discarded by `write_out`.
+        seg.end = seg.pos;
+        tracing::debug!("taking over a stalled segment at {from}");
+        let id = g.new_slot(Segment { start: from, end: to, pos: from }, true, false);
+        return Work::Slot(id);
     }
     // Split the active segment with the most work left.
     let min_split = ctx.cfg.min_split;
@@ -546,10 +585,23 @@ async fn worker(ctx: Arc<Ctx>, mut initial: Option<(u64, Response, ResponseMeta)
             Some((slot, resp, meta)) => (slot, Some((resp, meta))),
             None => match acquire_work(&ctx) {
                 Work::Slot(s) => (s, None),
-                Work::None => return,
+                Work::None => {
+                    // Nothing to take right now. While other connections are
+                    // still working, stay around: one of them may stall and
+                    // need to be taken over.
+                    let others_busy = {
+                        let g = ctx.shared.inner.lock();
+                        g.ranges && g.slots.iter().any(|s| s.active && !s.seg.is_complete())
+                    };
+                    if !others_busy || sleep_or_cancel(&ctx.cancel, Duration::from_secs(1)).await.is_err() {
+                        return;
+                    }
+                    continue;
+                }
             },
         };
-        match serve_slot(&ctx, slot, pending).await {
+        let mut slot = slot;
+        match serve_slot(&ctx, &mut slot, pending).await {
             SegEnd::Done => {
                 release(&ctx, slot);
                 continue;
@@ -596,14 +648,19 @@ fn judge(ctx: &Ctx, slot_pos: u64, ranged: bool, meta: &ResponseMeta) -> Result<
     }
     match meta.status {
         206 => {
-            let cr = meta.content_range.ok_or_else(|| TransferError::new(ErrorKind::Http, "The server sent a partial response without Content-Range."))?;
+            let cr = meta
+                .content_range
+                .ok_or_else(|| TransferError::new(ErrorKind::Http, "The server sent a partial response without Content-Range."))?;
             if let (Some(expected), Some(total)) = (size, cr.total) {
                 if expected != total {
                     return Err(TransferError::changed("size differs"));
                 }
             }
             if cr.start != slot_pos {
-                return Err(TransferError::new(ErrorKind::Network, format!("The server returned bytes from {} instead of {}.", cr.start, slot_pos)));
+                return Err(TransferError::new(
+                    ErrorKind::Network,
+                    format!("The server returned bytes from {} instead of {}.", cr.start, slot_pos),
+                ));
             }
             Ok(Verdict::Stream)
         }
@@ -667,12 +724,21 @@ impl Drop for ConnGuard<'_> {
     }
 }
 
-async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response, ResponseMeta)>) -> SegEnd {
+async fn serve_slot(ctx: &Arc<Ctx>, slot_ref: &mut u64, mut pending: Option<(Response, ResponseMeta)>) -> SegEnd {
+    // The slot can change while streaming (continuing into the next
+    // segment); the caller must release the one we end on.
+    let mut slot = *slot_ref;
+    macro_rules! ret {
+        ($e:expr) => {{
+            *slot_ref = slot;
+            return $e;
+        }};
+    }
     let mut failures = 0u32;
     let mut buf: Vec<u8> = Vec::with_capacity(ctx.cfg.buffer_size);
     loop {
         if ctx.cancel.is_cancelled() {
-            return SegEnd::Stop;
+            ret!(SegEnd::Stop);
         }
         // Current slot state.
         let (pos, end, ranges, others_active) = {
@@ -680,9 +746,9 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
             let ranges = g.ranges;
             let size = g.size;
             let others = g.active_count().saturating_sub(1);
-            let Some(s) = g.find(slot) else { return SegEnd::Done };
+            let Some(s) = g.find(slot) else { ret!(SegEnd::Done) };
             if s.seg.is_complete() {
-                return SegEnd::Done;
+                ret!(SegEnd::Done);
             }
             // Without range support a retry must start over from byte 0.
             if !ranges && s.seg.pos > 0 && pending.is_none() {
@@ -697,9 +763,9 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
 
         let permit = tokio::select! {
             p = ctx.limits.connections.clone().acquire_owned() => p.ok(),
-            _ = ctx.cancel.cancelled() => return SegEnd::Stop,
+            _ = ctx.cancel.cancelled() => ret!(SegEnd::Stop),
         };
-        let Some(_permit) = permit else { return SegEnd::Stop };
+        let Some(_permit) = permit else { ret!(SegEnd::Stop) };
 
         let ranged;
         let (resp, meta) = match pending.take() {
@@ -711,23 +777,31 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                 ranged = ranges && (pos > 0 || end != UNKNOWN_END);
                 match request(ctx, pos, end, ranged).await {
                     Ok(Some(p)) => p,
-                    Ok(None) => return SegEnd::Stop,
+                    Ok(None) => ret!(SegEnd::Stop),
                     Err(e) => {
                         // A connection beyond the first refused by the server:
                         // lower the connection target instead of failing.
-                        if others_active > 0 && e.status.is_some_and(|s| s == 429 || s == 503) {
+                        let _ = others_active;
+                        if e.status.is_some_and(|s| s == 429 || s == 503) {
                             let mut g = ctx.shared.inner.lock();
-                            g.target_conns = g.active_count().saturating_sub(1).max(1);
-                            *ctx.last_error.lock() = Some(e);
-                            return SegEnd::Released;
+                            let others_now = g.active_count().saturating_sub(1);
+                            if others_now > 0 {
+                                // The server wants fewer connections: settle on
+                                // the ones that work and remember the limit.
+                                g.target_conns = others_now;
+                                ctx.shared.limited_to.store(others_now, Ordering::Relaxed);
+                                drop(g);
+                                *ctx.last_error.lock() = Some(e);
+                                ret!(SegEnd::Released);
+                            }
                         }
                         if !e.kind.is_retryable() {
                             ctx.fail(e);
-                            return SegEnd::Stop;
+                            ret!(SegEnd::Stop);
                         }
                         failures += 1;
                         match retry_or_give_up(ctx, e, failures, others_active).await {
-                            Some(end) => return end,
+                            Some(end) => ret!(end),
                             None => continue,
                         }
                     }
@@ -735,18 +809,19 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
             }
         };
 
+        tracing::debug!(slot, pos, end, status = meta.status, "response");
         let verdict = match judge(ctx, pos, ranged, &meta) {
             Ok(v) => v,
             Err(e) => {
                 if e.kind.is_retryable() {
                     failures += 1;
                     match retry_or_give_up(ctx, e, failures, others_active).await {
-                        Some(end) => return end,
+                        Some(end) => ret!(end),
                         None => continue,
                     }
                 }
                 ctx.fail(e);
-                return SegEnd::Stop;
+                ret!(SegEnd::Stop);
             }
         };
         match verdict {
@@ -754,14 +829,14 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                 if let Some(s) = ctx.shared.inner.lock().find(slot) {
                     s.seg.pos = s.seg.end;
                 }
-                return SegEnd::Done;
+                ret!(SegEnd::Done);
             }
             Verdict::FullBody => match fall_back_to_single(ctx, slot) {
                 Some(new_slot) => {
                     tracing::info!("server ignored byte ranges; continuing with one connection");
                     slot = new_slot;
                 }
-                None => return SegEnd::Released,
+                None => ret!(SegEnd::Released),
             },
             Verdict::Stream => {}
         }
@@ -771,29 +846,36 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
         ctx.shared.set_phase(None);
         let mut stream = resp.bytes_stream();
         let mut got = 0u64;
+        let mut last_touch = std::time::Instant::now() - Duration::from_secs(1);
         let outcome: Result<bool, TransferError> = loop {
             let next = tokio::select! {
                 n = stream.next() => n,
                 _ = ctx.cancel.cancelled() => {
                     // Keep what already arrived.
                     let _ = write_out(ctx, slot, &mut buf).await;
-                    return SegEnd::Stop;
+                    ret!(SegEnd::Stop);
                 }
             };
             match next {
                 Some(Ok(chunk)) => {
                     let n = chunk.len();
                     got += n as u64;
+                    if last_touch.elapsed() > Duration::from_millis(250) {
+                        last_touch = std::time::Instant::now();
+                        if let Some(s) = ctx.shared.inner.lock().find(slot) {
+                            s.last_progress = last_touch;
+                        }
+                    }
                     ctx.shared.received.fetch_add(n as u64, Ordering::Relaxed);
                     buf.extend_from_slice(&chunk);
                     if buf.len() >= ctx.cfg.buffer_size {
-                        match write_out(ctx, slot, &mut buf).await {
+                        match flush(ctx, &mut slot, &mut buf).await {
                             Ok(WriteState::More) => {}
                             Ok(WriteState::SlotDone) => break Ok(true),
-                            Ok(WriteState::SlotGone) => return SegEnd::Done,
+                            Ok(WriteState::SlotGone) => ret!(SegEnd::Done),
                             Err(e) => {
                                 ctx.fail(e);
-                                return SegEnd::Stop;
+                                ret!(SegEnd::Stop);
                             }
                         }
                     }
@@ -801,20 +883,20 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                     ctx.limits.global.acquire(n).await;
                 }
                 Some(Err(e)) => {
-                    let werr = write_out(ctx, slot, &mut buf).await;
+                    let werr = flush(ctx, &mut slot, &mut buf).await;
                     if let Err(e) = werr {
                         ctx.fail(e);
-                        return SegEnd::Stop;
+                        ret!(SegEnd::Stop);
                     }
                     break Err(http::request_error(e));
                 }
                 None => {
-                    match write_out(ctx, slot, &mut buf).await {
-                        Ok(WriteState::SlotGone) => return SegEnd::Done,
+                    match flush(ctx, &mut slot, &mut buf).await {
+                        Ok(WriteState::SlotGone) => ret!(SegEnd::Done),
                         Ok(_) => {}
                         Err(e) => {
                             ctx.fail(e);
-                            return SegEnd::Stop;
+                            ret!(SegEnd::Stop);
                         }
                     }
                     break Ok(false);
@@ -823,8 +905,9 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
         };
         drop(stream);
 
+        tracing::debug!(slot, got, "stream ended: {:?}", outcome.as_ref().map_err(|e| &e.message));
         match outcome {
-            Ok(true) => return SegEnd::Done,
+            Ok(true) => ret!(SegEnd::Done),
             Ok(false) => {
                 // Clean end of body.
                 let finished = {
@@ -844,7 +927,7 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                     }
                 };
                 if finished {
-                    return SegEnd::Done;
+                    ret!(SegEnd::Done);
                 }
                 // Body ended early: resume from where it stopped.
                 let e = TransferError::new(ErrorKind::Network, "The server closed the connection early.");
@@ -853,7 +936,7 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                 }
                 failures += 1;
                 match retry_or_give_up(ctx, e, failures, others_active).await {
-                    Some(end) => return end,
+                    Some(end) => ret!(end),
                     None => continue,
                 }
             }
@@ -863,7 +946,7 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
                 }
                 failures += 1;
                 match retry_or_give_up(ctx, e, failures, others_active).await {
-                    Some(end) => return end,
+                    Some(end) => ret!(end),
                     None => continue,
                 }
             }
@@ -873,7 +956,7 @@ async fn serve_slot(ctx: &Arc<Ctx>, mut slot: u64, mut pending: Option<(Response
 
 /// Backs off before a retry. Returns `Some` when the connection should end.
 async fn retry_or_give_up(ctx: &Ctx, e: TransferError, failures: u32, others_active: usize) -> Option<SegEnd> {
-    tracing::debug!("connection error (attempt {failures}): {}", e.message);
+    tracing::debug!("connection error (attempt {failures}, status {:?}): {}", e.status, e.message);
     let delay = e.retry_after.unwrap_or_else(|| Duration::from_millis(500 * (1u64 << failures.min(6))).min(Duration::from_secs(30)));
     *ctx.last_error.lock() = Some(e.clone());
     if failures > ctx.cfg.connection_retries {
@@ -894,9 +977,11 @@ async fn request(ctx: &Ctx, pos: u64, end: u64, ranged: bool) -> Result<Option<(
     let url = ctx.url.lock().clone();
     let mut rb = ctx.client.get(&url).headers(ctx.headers.clone());
     if ranged {
-        let size = ctx.shared.size();
-        let range = if end == UNKNOWN_END || Some(end) == size { format!("bytes={pos}-") } else { format!("bytes={}-{}", pos, end - 1) };
-        rb = rb.header(header::RANGE, range);
+        // Open-ended ranges let one connection continue into the following
+        // segment when that segment has no connection of its own (servers
+        // that limit connections), instead of opening a new one.
+        let _ = end;
+        rb = rb.header(header::RANGE, format!("bytes={pos}-"));
         let validator = {
             let id = ctx.identity.lock();
             http::if_range_value(id.etag.as_deref(), id.last_modified.as_deref())
@@ -921,6 +1006,47 @@ async fn request(ctx: &Ctx, pos: u64, end: u64, ranged: bool) -> Result<Option<(
         }
         Err(e) => Err(http::request_error(e)),
     }
+}
+
+/// Writes the buffer; when the segment fills up and the next segment has
+/// no connection, continues into it on this connection (`slot` changes).
+async fn flush(ctx: &Ctx, slot: &mut u64, buf: &mut Vec<u8>) -> Result<WriteState, TransferError> {
+    loop {
+        match write_out(ctx, *slot, buf).await? {
+            WriteState::SlotDone => match adopt_next(ctx, *slot) {
+                Some(next) => {
+                    *slot = next;
+                    if buf.is_empty() {
+                        return Ok(WriteState::More);
+                    }
+                }
+                None => {
+                    buf.clear();
+                    return Ok(WriteState::SlotDone);
+                }
+            },
+            other => {
+                if !matches!(other, WriteState::More) {
+                    buf.clear();
+                }
+                return Ok(other);
+            }
+        }
+    }
+}
+
+/// Claims the idle, untouched segment that starts where `slot` ends.
+fn adopt_next(ctx: &Ctx, slot: u64) -> Option<u64> {
+    let mut g = ctx.shared.inner.lock();
+    let end = g.find(slot)?.seg.end;
+    let next = g.slots.iter_mut().find(|s| !s.active && s.seg.start == end && s.seg.pos == s.seg.start && !s.seg.is_complete())?;
+    next.active = true;
+    next.last_progress = std::time::Instant::now();
+    let id = next.id;
+    if let Some(cur) = g.find(slot) {
+        cur.active = false;
+    }
+    Some(id)
 }
 
 enum WriteState {
@@ -956,7 +1082,9 @@ async fn write_out(ctx: &Ctx, slot: u64, buf: &mut Vec<u8>) -> Result<WriteState
             .map_err(|e| TransferError::io("Could not write to the download file", e))?;
         *buf = data;
     }
-    buf.clear();
+    // Bytes past the end of this segment stay buffered: the caller may
+    // continue into the adjacent segment on the same connection.
+    buf.drain(..allowed);
     let mut g = ctx.shared.inner.lock();
     let Some(s) = g.find(slot) else { return Ok(WriteState::SlotGone) };
     if s.seg.pos == offset {
@@ -986,11 +1114,8 @@ mod tests {
 
     #[test]
     fn compact_merges_completed_neighbours() {
-        let segs = vec![
-            Segment { start: 10, end: 20, pos: 20 },
-            Segment { start: 0, end: 10, pos: 10 },
-            Segment { start: 20, end: 30, pos: 25 },
-        ];
+        let segs =
+            vec![Segment { start: 10, end: 20, pos: 20 }, Segment { start: 0, end: 10, pos: 10 }, Segment { start: 20, end: 30, pos: 25 }];
         let c = compact(segs);
         assert_eq!(c, vec![Segment { start: 0, end: 20, pos: 20 }, Segment { start: 20, end: 30, pos: 25 }]);
     }
