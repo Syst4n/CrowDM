@@ -234,6 +234,7 @@ fn test_page(addr: SocketAddr) -> String {
 <h1>CrowDM test page</h1>
 <p><a id="small" href="/file?size=1048576&amp;name=small.bin&amp;etag=s">small.bin (1 MiB)</a></p>
 <p><a id="big" href="/file?size=268435456&amp;name=big.bin&amp;etag=b">big.bin (256 MiB)</a></p>
+<p><a id="slow" href="/file?size=33554432&amp;rate=1048576&amp;name=slow.bin&amp;etag=sl">slow.bin (32 MiB at 1 MiB/s)</a></p>
 <p><a id="unknown" href="/file?size=5000000&amp;chunked&amp;name=unknown-size.dat">unknown size</a></p>
 <p><a id="odd" href="/file?size=123457&amp;name=report.weirdext">odd extension</a></p>
 <p><a id="redirect" href="/redirect?n=3&amp;to=%2Ffile%3Fsize%3D2097152%26name%3Dredirected.zip%26etag%3Dr">redirected.zip</a></p>

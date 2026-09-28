@@ -9,6 +9,7 @@
 | Test server | `cargo test -p crowdm-testserver` | Deterministic content generator. |
 | Frontend types | `pnpm --dir apps/desktop typecheck` | TypeScript. |
 | App end to end | `node tools/e2e/app-capture.mjs` | Real CrowDM + real native host + fake browser: hello, capture, dialog, Start (download completes into the category folder), "Download in Chrome", HTML-page warning, Cancel, duplicate clicks, connection loss, cold start of the app by the host. 17 checks. |
+| Firefox end to end | `node tools/e2e/firefox-capture.mjs` | Installed Firefox, headless, throwaway profile, add-on loaded as temporary through geckodriver: click, dialog, Start (Firefox's own copy cancelled, CrowDM completes the file), "Download in Firefox" (Firefox finishes it, CrowDM does not). 8 checks. |
 | Browser end to end | `node tools/e2e/browser-capture.mjs` | Real Chromium (Chrome for Testing, throwaway profile) with the real extension: click a link, browser download paused, dialog shows, Start takes over and cancels/erases the browser download, the file completes; "Download in Chrome" lets the browser finish; exclusions return to the browser; video button appears and sends the video; clicking while CrowDM is closed starts it. 12 checks. |
 
 Set `CROWDM_TEST_DIR` to a folder on a drive with plenty of free space for the
@@ -61,8 +62,6 @@ All run against `crates/testserver`, which generates file content from
 
 ## What has not been tested
 
-- The Firefox extension end to end (the manifest and code paths are shared
-  with Chromium except for pausing; not yet run in Firefox).
 - Real Google Chrome and Microsoft Edge with the extension loaded unpacked
   (Chrome for Testing was used; stable Chrome no longer accepts
   `--load-extension`, so automating it needs a different approach).

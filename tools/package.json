@@ -2,5 +2,9 @@
   "name": "crowdm-tools",
   "private": true,
   "type": "module",
-  "devDependencies": { "playwright-core": "1.63.0" }
+  "devDependencies": {
+    "geckodriver": "^7.0.0",
+    "playwright-core": "1.63.0",
+    "selenium-webdriver": "^4.49.0"
+  }
 }

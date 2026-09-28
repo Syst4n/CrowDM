@@ -19,6 +19,8 @@ browser; the dialog reports when it has painted each capture
 | Dialog painted, first capture after a quiet period (window created) | 480-530 ms |
 | Real Chromium: click to dialog painted, warm | 46 ms |
 | Real Chromium: click to dialog, CrowDM not running (host starts it) | 754 ms |
+| Real Firefox: click to capture arriving in the app, host not yet running / running | 178 ms / 17 ms |
+| Real Firefox: capture to dialog painted, first / second capture | 561-687 ms / 25-27 ms |
 | Native host connects to an already running app | ~110 ms after the browser starts it |
 
 Default behaviour: the dialog is created on the first capture and kept loaded

@@ -146,5 +146,6 @@ styled by the page, and it follows the video into fullscreen.
   body is not available to extensions). CrowDM's own request then usually gets
   an error or a page, and the dialog recommends letting the browser finish.
 - Firefox is not paused while the dialog is open (see ARCHITECTURE.md), so a
-  large file downloads in Firefox in parallel until you decide.
-- The Firefox build has not been exercised end to end yet (see STATUS.md).
+  large file downloads in Firefox in parallel until you decide, and a small
+  or fast file may finish in Firefox first; the dialog then closes itself and
+  Firefox's copy is kept.

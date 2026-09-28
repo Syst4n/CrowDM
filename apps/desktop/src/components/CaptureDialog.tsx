@@ -172,7 +172,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
                 {source}
               </span>
             )}
-            {c.browserWaiting && browserName && <span>Paused in {browserName}</span>}
+            {c.browserWaiting && browserName && <span>{c.browser === "firefox" ? "Firefox keeps downloading until you choose" : `Paused in ${browserName}`}</span>}
           </div>
         </div>
       </div>

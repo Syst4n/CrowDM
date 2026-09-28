@@ -11,6 +11,8 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
   collision-safe finalization. See TESTING.md.
 - Browser hand-off with Chromium: click, pause, dialog, take over or give
   back, exclusions, duplicate clicks, cold start of the app, connection loss.
+- Browser hand-off with Firefox (headless, temporary add-on): dialog, take
+  over (Firefox's copy cancelled), give back.
 - "Download this video" button for file-backed videos; context menu entry.
 - Desktop app: download list with filters, categories and search; details
   with a live segment map; pause, resume, retry, download again, update the
@@ -25,14 +27,13 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
 
 ## Built but not verified end to end
 
-- Firefox extension (shares the code; pausing is deliberately skipped).
 - Real Chrome and Edge stable (verified with Chrome for Testing).
 - Schedule, sleep/shutdown after queue, start with Windows.
 - Portable mode (`portable` marker file next to `CrowDM.exe`).
 
 ## Next steps (proposed order)
 
-1. Verify the Firefox extension in Firefox; sign it on addons.mozilla.org.
+1. Sign the Firefox add-on on addons.mozilla.org so it installs permanently.
 2. Publish the Chromium extension to the Chrome Web Store and Edge Add-ons
    (removes the developer-mode notice; add the store ids to the host
    manifest's `allowed_origins`).
