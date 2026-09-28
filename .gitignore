@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/target/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Tauri
+apps/desktop/src-tauri/gen/schemas/
+
+# Extension builds
+extensions/build/
+
+# Local artifacts
+*.log
+*.crowdm-part
+/bench-results/local/
+.env
+.env.*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+[package]
+name = "crowdm-testserver"
+description = "Controllable local HTTP server used by CrowDM tests and benchmarks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tokio = { workspace = true }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+http-body = "1"
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+url = "2"
+
+[[bin]]
+name = "crowdm-testserver"
+path = "src/main.rs"

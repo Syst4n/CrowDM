@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine",
+    # "crates/ipc",
+    # "crates/host",
+    "crates/testserver",
+    # "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "UNLICENSED"
+repository = "https://github.com/Syst4n/CrowDM"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net", "fs"] }
+tokio-util = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+parking_lot = "0.12"
+futures-util = "0.3"
+bytes = "1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+strip = true
+panic = "unwind"

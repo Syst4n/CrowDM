@@ -1,0 +1,44 @@
+[package]
+name = "crowdm-engine"
+description = "CrowDM transfer engine: segmented HTTP downloads, queues and persistence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+parking_lot = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "stream", "system-proxy"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+url = "2"
+percent-encoding = "2"
+mime_guess = "2"
+sha2 = "0.10"
+md-5 = "0.10"
+sha1 = "0.10"
+hex = "0.4"
+httpdate = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+] }
+
+[dev-dependencies]
+crowdm-testserver = { path = "../testserver" }
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
