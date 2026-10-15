@@ -38,6 +38,7 @@ const STALL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct TransferConfig {
+    pub reject_html: bool,
     pub max_connections: usize,
     /// Segments are only split when both halves would be at least this big.
     pub min_split: u64,
@@ -50,6 +51,7 @@ pub struct TransferConfig {
 impl Default for TransferConfig {
     fn default() -> Self {
         TransferConfig {
+            reject_html: false,
             max_connections: 8,
             min_split: 1024 * 1024,
             connection_retries: 6,
@@ -144,6 +146,13 @@ impl Shared {
 
     pub fn set_phase(&self, p: Option<&str>) {
         *self.phase.lock() = p.map(str::to_string);
+    }
+
+    pub(crate) fn media_progress(&self, downloaded: u64, size: Option<u64>) {
+        let mut g = self.inner.lock();
+        g.size = size;
+        g.slots.clear();
+        g.new_slot(Segment { start: 0, end: size.unwrap_or(UNKNOWN_END), pos: downloaded }, true, false);
     }
 
     fn is_complete(&self) -> bool {
@@ -260,6 +269,9 @@ pub async fn run(
             Some(p) => p,
             None => open_first(&client, &input, &cancel).await?,
         };
+        if cfg.reject_html && meta.looks_like_html() {
+            return Err(TransferError::new(ErrorKind::Http, "The server returned a web page instead of a file. Use the video button for streaming media, or let the browser download this link.").into());
+        }
         let size = meta.total_size();
         let full_body = meta.status == 200;
         let ranges = size.is_some() && (meta.status == 206 || meta.accept_ranges) && meta.content_encoding.is_none();
@@ -629,6 +641,9 @@ enum Verdict {
 }
 
 fn judge(ctx: &Ctx, slot_pos: u64, ranged: bool, meta: &ResponseMeta) -> Result<Verdict, TransferError> {
+    if ctx.cfg.reject_html && meta.looks_like_html() {
+        return Err(TransferError::new(ErrorKind::Http, "The server returned a web page instead of the downloaded file."));
+    }
     let size = ctx.shared.size();
     // Validator checks.
     {

@@ -63,6 +63,36 @@ async fn wait_done(engine: &Engine, id: JobId) -> JobSnapshot {
     wait_for(engine, id, &[JobState::Completed, JobState::Failed], Duration::from_secs(60)).await
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn html_is_rejected_before_writing_a_file_and_can_be_explicitly_allowed() {
+    let env = setup().await;
+    let id = env.engine.add(job(env.server.url("/page"))).unwrap();
+    let snap = wait_done(&env.engine, id).await;
+    assert_eq!(snap.job.state, JobState::Failed);
+    assert!(snap.job.error.as_ref().unwrap().message.contains("web page"));
+    assert!(!snap.job.target_path().exists());
+    assert!(!snap.job.part_path().exists());
+
+    let mut settings = env.engine.settings();
+    settings.interception.skip_web_pages = false;
+    env.engine.update_settings(settings).unwrap();
+    let id = env.engine.add(job(env.server.url("/page"))).unwrap();
+    let snap = wait_done(&env.engine, id).await;
+    assert_eq!(snap.job.state, JobState::Completed, "{:?}", snap.job.error);
+    assert!(std::fs::read_to_string(snap.job.target_path()).unwrap().contains("<html>"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn html_probe_cannot_be_accepted_with_a_video_filename() {
+    let env = setup().await;
+    let url = env.server.url("/page");
+    let info = env.engine.probe(ProbeRequest { url: url.clone(), ..Default::default() }).await.unwrap();
+    assert!(info.looks_like_html);
+    let result = env.engine.add(NewJob { url, file_name: Some("pretend.mp4".into()), probe_id: info.probe_id, ..Default::default() });
+    assert!(result.is_err());
+    assert!(env.engine.jobs().is_empty());
+}
+
 fn assert_content(path: &Path, seed: u64, size: u64) {
     assert_eq!(content::verify_file(path, seed, size).unwrap(), None, "content mismatch in {}", path.display());
 }

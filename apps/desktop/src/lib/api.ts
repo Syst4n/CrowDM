@@ -17,6 +17,7 @@ export type ErrorKind =
 export type SourceKind = "browserCapture" | "browserMenu" | "video" | "manual";
 
 export interface Job {
+  mediaDownload: boolean;
   id: string;
   url: string;
   finalUrl: string | null;
@@ -82,7 +83,10 @@ export interface Category {
 }
 
 export type AfterQueue = "nothing" | "notify" | "exitApp" | "sleep" | "shutdown";
-export type Theme = "system" | "light" | "dark";
+export type Theme = "system" | "light" | "dark" | "nightwing" | "ocean" | "forest" | "sand";
+export type ColorMode = "system" | "light" | "dark";
+export type Palette = "classic" | "nightwing" | "ocean" | "forest" | "sand" | "rose" | "violet" | "amber" | "slate" | "cherry";
+export interface Appearance { mode: ColorMode; palette: Palette }
 
 export interface Settings {
   downloadRoot: string;
@@ -105,8 +109,12 @@ export interface Settings {
     minSize: number;
     includePrivate: boolean;
     videoButton: boolean;
+    skipWebPages: boolean;
   };
   theme: Theme;
+  appearance: Appearance | null;
+  animations: boolean;
+  respectReducedMotion: boolean;
   closeToTray: boolean;
   startWithWindows: boolean;
   startMinimized: boolean;
@@ -114,9 +122,12 @@ export interface Settings {
   confirmCaptured: boolean;
   prewarmDialog: boolean;
   soundOnComplete: boolean;
+  power: { preventSleepActive: boolean; preventSleepScheduled: boolean; allowSleepResumable: boolean };
 }
 
 export interface ProbeInfo {
+  sizeEstimated: boolean;
+  mediaOptions: { format: string; label: string; height: number | null; container: string; size: number | null }[];
   probeId: string | null;
   finalUrl: string;
   fileName: string;
@@ -135,6 +146,7 @@ export interface ProbeInfo {
 export type CaptureKind = "intercepted" | "menu" | "video" | "manual";
 
 export interface CaptureView {
+  mediaFormat: string | null;
   key: string;
   kind: CaptureKind;
   browser: string | null;
@@ -191,12 +203,14 @@ export interface AppInfo {
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   listJobs: () => invoke<JobSnapshot[]>("list_jobs"),
+  jobThumbnail: (id: string) => invoke<string | null>("job_thumbnail", { id }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
 
   captureList: () => invoke<CaptureView[]>("capture_list"),
   captureNew: (url?: string) => invoke<string>("capture_new", { url: url ?? null }),
   captureSetUrl: (key: string, url: string) => invoke<void>("capture_set_url", { key, url }),
+  captureSetMediaFormat: (key: string, format: string) => invoke<void>("capture_set_media_format", { key, format }),
   captureAccept: (key: string, options: AcceptOptions) => invoke<string>("capture_accept", { key, options }),
   captureToBrowser: (key: string) => invoke<void>("capture_to_browser", { key }),
   captureRendered: (key: string) => invoke<void>("capture_rendered", { key }),

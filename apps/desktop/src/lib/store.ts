@@ -10,7 +10,14 @@ export type Filter =
   | { kind: "completed" }
   | { kind: "category"; id: string };
 
-export type SortKey = "added" | "name" | "size" | "progress";
+export type SortKey = "added" | "oldest" | "name" | "nameDesc" | "size" | "sizeAsc" | "status" | "statusDesc" | "progress";
+
+export const SORT_OPTIONS: [SortKey, string][] = [
+  ["added", "Newest"], ["oldest", "Oldest"], ["name", "A–Z"], ["nameDesc", "Z–A"],
+  ["size", "By size: large"], ["sizeAsc", "By size: small"],
+  ["status", "By status: ascending"], ["statusDesc", "By status: descending"],
+  ["progress", "By progress"],
+];
 
 interface State {
   jobs: Record<string, JobSnapshot>;
@@ -90,7 +97,7 @@ export const useStore = create<State>((set, get) => ({
       case "jobCompleted":
       case "jobFailed": {
         const prev = s.jobs[e.job.id];
-        const structural = !prev || prev.state !== e.job.state || prev.fileName !== e.job.fileName || prev.category !== e.job.category || prev.queueOrder !== e.job.queueOrder;
+        const structural = !prev || prev.state !== e.job.state || prev.size !== e.job.size || prev.fileName !== e.job.fileName || prev.category !== e.job.category || prev.queueOrder !== e.job.queueOrder;
         set({ jobs: { ...s.jobs, [e.job.id]: e.job }, listVersion: structural ? s.listVersion + 1 : s.listVersion });
         break;
       }
@@ -145,13 +152,23 @@ export function sortJobs(list: JobSnapshot[], key: SortKey): JobSnapshot[] {
   const out = [...list];
   switch (key) {
     case "added":
-      out.sort((a, b) => stateRank[a.state] - stateRank[b.state] || b.createdAt - a.createdAt);
+      out.sort((a, b) => b.createdAt - a.createdAt);
+      break;
+    case "oldest":
+      out.sort((a, b) => a.createdAt - b.createdAt);
       break;
     case "name":
+    case "nameDesc":
       out.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
+      if (key === "nameDesc") out.reverse();
       break;
     case "size":
-      out.sort((a, b) => (b.size ?? -1) - (a.size ?? -1));
+    case "sizeAsc":
+      out.sort((a, b) => a.size == null ? (b.size == null ? 0 : 1) : b.size == null ? -1 : key === "size" ? b.size - a.size : a.size - b.size);
+      break;
+    case "status":
+    case "statusDesc":
+      out.sort((a, b) => (key === "status" ? 1 : -1) * (stateRank[a.state] - stateRank[b.state]) || b.createdAt - a.createdAt);
       break;
     case "progress":
       out.sort((a, b) => (b.size ? b.downloaded / b.size : 0) - (a.size ? a.downloaded / a.size : 0));

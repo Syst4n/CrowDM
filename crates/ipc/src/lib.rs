@@ -30,7 +30,17 @@ pub fn pipe_name() -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    format!(r"\\.\pipe\CrowDM-{user}")
+    let suffix: String = std::env::var("CROWDM_TEST_INSTANCE")
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(64)
+        .collect();
+    if suffix.is_empty() {
+        format!(r"\\.\pipe\CrowDM-{user}")
+    } else {
+        format!(r"\\.\pipe\CrowDM-{user}-test-{suffix}")
+    }
 }
 
 /// A cookie or header forwarded by the extension.
@@ -58,6 +68,8 @@ pub enum CaptureKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Capture {
+    #[serde(default)]
+    pub media_format: Option<String>,
     pub kind: CaptureKind,
     /// Browser download id for intercepted downloads.
     pub browser_download_id: Option<i64>,
@@ -95,6 +107,10 @@ pub enum FromBrowser {
         browser: String,
         capture: Capture,
     },
+    VideoOptions {
+        id: String,
+        capture: Capture,
+    },
     /// The browser download we were deciding about went away (the user
     /// cancelled it in the browser, or it finished before we answered).
     CaptureGone {
@@ -125,6 +141,11 @@ pub enum Decision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ToBrowser {
+    VideoOptions {
+        reply_to: String,
+        title: String,
+        formats: Vec<VideoOption>,
+    },
     Hello {
         reply_to: String,
         app_version: String,
@@ -152,16 +173,47 @@ pub enum ToBrowser {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoOption {
+    pub format: String,
+    pub label: String,
+    pub height: Option<u64>,
+    pub container: String,
+    pub size: Option<u64>,
+}
+
 /// Interception settings the extension enforces.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserSettings {
+    #[serde(default)]
+    pub theme: String,
+    #[serde(default)]
+    pub appearance: Option<BrowserAppearance>,
+    #[serde(default = "default_skip_web_pages")]
+    pub animations: bool,
+    #[serde(default = "default_skip_web_pages")]
+    pub respect_reduced_motion: bool,
     pub enabled: bool,
     pub excluded_sites: Vec<String>,
     pub excluded_extensions: Vec<String>,
     pub min_size: u64,
     pub include_private: bool,
     pub video_button: bool,
+    #[serde(default = "default_skip_web_pages")]
+    pub skip_web_pages: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserAppearance {
+    pub mode: String,
+    pub palette: String,
+}
+
+fn default_skip_web_pages() -> bool {
+    true
 }
 
 #[cfg(test)]

@@ -39,6 +39,7 @@ pub struct PendingCapture {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureView {
+    pub media_format: Option<String>,
     pub key: Uuid,
     pub kind: CaptureKind,
     pub browser: Option<String>,
@@ -80,6 +81,7 @@ impl PendingCapture {
             recommend = Some("CrowDM could not open this link directly. The browser can still download it.".to_string());
         }
         CaptureView {
+            media_format: c.media_format.clone(),
             key: self.key,
             kind: c.kind,
             browser: self.browser.clone(),
@@ -164,11 +166,19 @@ impl AppState {
 pub fn browser_settings(s: &Settings) -> BrowserSettings {
     let i = &s.interception;
     BrowserSettings {
+        appearance: Some(crowdm_ipc::BrowserAppearance {
+            mode: serde_json::to_value(s.effective_appearance().mode).unwrap().as_str().unwrap().into(),
+            palette: serde_json::to_value(s.effective_appearance().palette).unwrap().as_str().unwrap().into(),
+        }),
+        animations: s.animations,
+        respect_reduced_motion: s.respect_reduced_motion,
+        theme: serde_json::to_value(s.theme).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "system".into()),
         enabled: i.enabled,
         excluded_sites: i.excluded_sites.clone(),
         excluded_extensions: i.excluded_extensions.clone(),
         min_size: i.min_size,
         include_private: i.include_private,
         video_button: i.video_button,
+        skip_web_pages: i.skip_web_pages,
     }
 }

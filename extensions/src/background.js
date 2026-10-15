@@ -13,12 +13,17 @@ const VERSION = B.runtime.getManifest().version;
 const RECEIVE_TIMEOUT_MS = 15000;
 
 const DEFAULT_SETTINGS = {
+  theme: "system",
+  appearance: null,
+  animations: true,
+  respectReducedMotion: true,
   enabled: true,
   excludedSites: [],
   excludedExtensions: [],
   minSize: 0,
   includePrivate: false,
   videoButton: true,
+  skipWebPages: true,
 };
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -36,6 +41,8 @@ let outbox = [];
  * { downloadId, received, timer, suggest, sent }
  */
 const pending = new Map();
+const manualReceipts = new Map();
+const videoQueries = new Map();
 /** Download ids we are handling (to ignore duplicate events). */
 const handled = new Map();
 
@@ -68,6 +75,10 @@ function connect() {
     port = null;
     appReady = false;
     outbox = [];
+    for (const finish of manualReceipts.values()) finish(false);
+    manualReceipts.clear();
+    for (const finish of videoQueries.values()) finish({ ok: false, error: "CrowDM disconnected. Open the app and try again." });
+    videoQueries.clear();
     // Anything still waiting goes back to the browser, so nothing is lost.
     for (const [id, p] of pending) {
       giveBack(p);
@@ -107,6 +118,7 @@ function onAppMessage(msg) {
       applySettings(msg.settings);
       break;
     case "received": {
+      manualReceipts.get(msg.replyTo)?.(true);
       const p = pending.get(msg.replyTo);
       if (p) {
         p.received = true;
@@ -118,6 +130,7 @@ function onAppMessage(msg) {
       onDecision(msg.replyTo, msg.decision);
       break;
     case "error":
+      videoQueries.get(msg.replyTo)?.({ ok: false, error: msg.message });
       lastError = msg.message;
       log("app error:", msg.code, msg.message);
       if (msg.code === "appUnavailable" || msg.code === "appClosed") {
@@ -127,6 +140,9 @@ function onAppMessage(msg) {
         }
       }
       broadcastStatus();
+      break;
+    case "videoOptions":
+      videoQueries.get(msg.replyTo)?.({ ok: true, title: msg.title, formats: msg.formats });
       break;
   }
 }
@@ -200,6 +216,7 @@ function shouldCatch(item) {
   if (item.incognito && !settings.includePrivate) return false;
   if (siteExcluded(url) || (item.referrer && siteExcluded(item.referrer))) return false;
   const ext = extOf(item.filename) || extOf(url);
+  if (settings.skipWebPages && (/^(text\/html|application\/xhtml\+xml)(;|$)/i.test(item.mime || "") || ["html", "htm", "xhtml"].includes(ext))) return false;
   if (ext && settings.excludedExtensions.includes(ext)) return false;
   const size = item.totalBytes > 0 ? item.totalBytes : item.fileSize > 0 ? item.fileSize : 0;
   if (settings.minSize > 0 && size > 0 && size < settings.minSize) return false;
@@ -308,7 +325,7 @@ B.downloads.onCreated.addListener((item) => {
     // paused, so there the browser keeps downloading until we decide.
     if (!IS_FIREFOX) {
       B.downloads.pause(item.id).then(
-        () => (p.paused = true),
+        () => { p.paused = true; if (p.given) B.downloads.resume(item.id).catch(() => {}); },
         () => {},
       );
     }
@@ -349,15 +366,24 @@ setInterval(() => {
 
 // ----- context menu and video button ----------------------------------
 
-function sendUrl(kind, url, pageUrl, pageTitle, storeId) {
-  if (!/^https?:/i.test(url || "")) return;
-  requestHeaders(url, storeId).then((headers) => {
-    send({
+async function sendUrl(kind, url, pageUrl, pageTitle, storeId, incognito = false, mediaFormat = null) {
+  await ready;
+  if (!settings.enabled || pausedHere || incognito && !settings.includePrivate || siteExcluded(url) || pageUrl && siteExcluded(pageUrl)) return false;
+  if (!/^https?:/i.test(url || "")) return false;
+  const headers = await requestHeaders(url, storeId);
+  const id = `${kind}-${nextId++}`;
+  const received = new Promise((resolve) => {
+    const timer = setTimeout(() => finish(false), RECEIVE_TIMEOUT_MS);
+    const finish = (ok) => { clearTimeout(timer); manualReceipts.delete(id); resolve(ok); };
+    manualReceipts.set(id, finish);
+  });
+  const sent = send({
       type: "capture",
-      id: `${kind}-${nextId++}`,
+      id,
       browser: BROWSER,
       capture: {
         kind,
+        mediaFormat,
         browserDownloadId: null,
         url,
         finalUrl: null,
@@ -367,11 +393,61 @@ function sendUrl(kind, url, pageUrl, pageTitle, storeId) {
         fileName: null,
         mime: null,
         size: null,
-        incognito: false,
+        incognito,
         headers,
       },
-    });
   });
+  if (!sent) manualReceipts.get(id)?.(false);
+  return received;
+}
+
+async function queryVideoOptions(url, pageUrl, storeId, incognito) {
+  if (!settings.enabled || pausedHere || incognito && !settings.includePrivate || siteExcluded(url) || pageUrl && siteExcluded(pageUrl)) return { ok: false, error: "Video capture is disabled for this page." };
+  const headers = await requestHeaders(url, storeId);
+  const id = `formats-${nextId++}`;
+  const result = new Promise((resolve) => {
+    const timer = setTimeout(() => finish({ ok: false, error: "Video lookup timed out. Open CrowDM and try again." }), 110000);
+    const finish = (value) => { clearTimeout(timer); videoQueries.delete(id); resolve(value); };
+    videoQueries.set(id, finish);
+  });
+  const sent = send({ type: "videoOptions", id, capture: { kind: "video", url, pageUrl, referrer: pageUrl, headers, incognito, mediaFormat: null,
+    browserDownloadId: null, finalUrl: null, fileName: null, mime: null, size: null, pageTitle: null } });
+  if (!sent) videoQueries.get(id)?.({ ok: false, error: "Could not connect to CrowDM." });
+  return result;
+}
+
+// Keep only manifests, never individual DASH/HLS fragments. Frame scoping
+// avoids selecting a stream from an advertisement or a different iframe.
+const manifests = new Map();
+B.webRequest.onHeadersReceived.addListener((details) => {
+  if (details.tabId < 0 || !/^https?:/i.test(details.url)) return;
+  const mime = details.responseHeaders?.find((h) => h.name.toLowerCase() === "content-type")?.value || "";
+  if (!/\.(m3u8|mpd)([?#]|$)/i.test(details.url) && !/(mpegurl|dash\+xml)/i.test(mime)) return;
+  const key = `${details.tabId}:${details.frameId}`;
+  const list = (manifests.get(key) || []).filter((v) => Date.now() - v.at < 120000 && v.url !== details.url);
+  list.push({ url: details.url, at: Date.now() });
+  manifests.set(key, list.slice(-8));
+}, { urls: ["http://*/*", "https://*/*"] }, ["responseHeaders"]);
+function clearNavigation({ tabId, frameId }) {
+  for (const key of manifests.keys()) if (frameId === 0 ? key.startsWith(`${tabId}:`) : key === `${tabId}:${frameId}`) manifests.delete(key);
+}
+B.webNavigation.onCommitted.addListener(clearNavigation);
+B.webNavigation.onHistoryStateUpdated?.addListener(clearNavigation);
+B.tabs.onRemoved.addListener((tabId) => {
+  for (const key of manifests.keys()) if (key.startsWith(`${tabId}:`)) manifests.delete(key);
+});
+
+function mediaUrl(url, pageUrl, tabId, frameId = 0) {
+  // A YouTube CDN URL may contain only audio or only video; the extractor
+  // needs the watch page to choose and merge both tracks.
+  if (/(^|\.)(youtube\.com|youtu\.be)$/.test(hostOf(pageUrl))) {
+    const page = new URL(pageUrl);
+    const id = page.searchParams.get("v") || (/^\/(shorts|embed|live)\//.test(page.pathname) ? page.pathname.split("/")[2] : page.hostname === "youtu.be" ? page.pathname.slice(1) : null);
+    return id ? `https://www.youtube.com/watch?v=${encodeURIComponent(id)}` : pageUrl;
+  }
+  if (/^https?:/i.test(url || "")) return url;
+  const list = (manifests.get(`${tabId}:${frameId}`) || []).filter((v) => Date.now() - v.at < 120000);
+  return list.length === 1 ? list[0].url : pageUrl;
 }
 
 function createMenus() {
@@ -386,11 +462,11 @@ B.runtime.onStartup?.addListener(createMenus);
 
 B.contextMenus.onClicked.addListener((info, tab) => {
   const url = info.menuItemId === "crowdm-link" ? info.linkUrl : info.srcUrl;
-  if (url && url.startsWith("blob:")) {
-    notifyTab(tab, "This media is streamed in pieces and cannot be downloaded as one file.");
-    return;
-  }
-  sendUrl("menu", url, info.pageUrl || tab?.url, tab?.title, tab?.cookieStoreId);
+  const pageUrl = info.frameUrl || info.pageUrl || tab?.url;
+  const video = info.mediaType === "video" || /\.(m3u8|mpd)([?#]|$)/i.test(url || "") || /(^|\.)(youtube\.com|youtu\.be)$/.test(hostOf(url));
+  const target = video ? mediaUrl(url, pageUrl, tab?.id, info.frameId) : url;
+  sendUrl(video ? "video" : "menu", target, pageUrl, tab?.title, tab?.cookieStoreId, !!tab?.incognito)
+    .then((ok) => { if (!ok) notifyTab(tab, "CrowDM could not receive this download. Check the extension connection and settings."); });
 });
 
 function notifyTab(tab, text) {
@@ -400,9 +476,27 @@ function notifyTab(tab, text) {
 B.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg?.type) {
     case "video":
-      sendUrl("video", msg.url, msg.pageUrl || sender.tab?.url, msg.title || sender.tab?.title, sender.tab?.cookieStoreId);
-      sendResponse({ ok: true });
-      break;
+    case "videoOptions":
+      ready.then(async () => {
+        // sender.url can describe the document's initial URL after an SPA
+        // navigation. The content script supplies the current location.
+        const original = sender.url || sender.tab?.url;
+        let pageUrl = original;
+        try { if (new URL(msg.pageUrl).origin === new URL(original).origin) pageUrl = msg.pageUrl; } catch { /* Invalid page stays scoped to its sender. */ }
+        if ((sender.frameId ?? 0) === 0 && B.tabs.get && sender.tab?.id != null) {
+          const tab = await B.tabs.get(sender.tab.id);
+          if (tab.url && mediaUrl(null, tab.url) !== mediaUrl(null, pageUrl)) return sendResponse({ ok: false, error: "The video changed. Open the download menu again." });
+        }
+        if (!settings.videoButton) return sendResponse({ ok: false });
+        const url = mediaUrl(msg.url, pageUrl, sender.tab?.id, sender.frameId);
+        if (msg.type === "videoOptions") {
+          sendResponse(await queryVideoOptions(url, pageUrl, sender.tab?.cookieStoreId, !!sender.tab?.incognito));
+          return;
+        }
+        const ok = await sendUrl("video", url, pageUrl, msg.title || sender.tab?.title, sender.tab?.cookieStoreId, !!sender.tab?.incognito, msg.mediaFormat);
+        sendResponse({ ok });
+      }).catch(() => sendResponse({ ok: false }));
+      return true;
     case "getStatus":
       ready.then(() => sendResponse(status()));
       return true;

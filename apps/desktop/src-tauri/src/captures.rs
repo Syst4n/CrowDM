@@ -12,12 +12,28 @@ use crate::windows;
 
 pub const EVENT_CAPTURES: &str = "captures-changed";
 
+/// A dialog opened before changing the root must not keep suggesting the old
+/// auto-derived destination. Explicit folder edits are preserved by the UI.
+pub fn refresh_folders(state: &AppState, settings: &crowdm_engine::Settings) {
+    for capture in state.captures.lock().iter_mut() {
+        if let Some(info) = &mut capture.probe {
+            info.category = settings.category_for(&info.file_name);
+            info.dir = settings.dir_for_category(&info.category);
+            info.exists = info.dir.join(&info.file_name).exists();
+        }
+    }
+    changed(state);
+}
+
 fn now_ms() -> i64 {
     crowdm_engine::now_ms()
 }
 
 /// Handles a capture message from an extension.
-pub fn on_capture(state: &AppState, conn: u64, request_id: String, browser: String, capture: Capture) {
+pub fn on_capture(state: &AppState, conn: u64, request_id: String, browser: String, mut capture: Capture) {
+    if capture.kind == CaptureKind::Menu && crowdm_engine::media::is_media_url(&capture.url) {
+        capture.kind = CaptureKind::Video;
+    }
     // The same browser download offered twice (a retry after a reconnect):
     // only the first counts.
     {
@@ -41,7 +57,7 @@ pub fn on_capture(state: &AppState, conn: u64, request_id: String, browser: Stri
     let settings = state.engine.settings();
     if !settings.confirm_captured {
         // Silent mode: start immediately without the dialog.
-        let pending = PendingCapture {
+        let mut pending = PendingCapture {
             key: Uuid::new_v4(),
             conn: Some(conn),
             request_id: Some(request_id.clone()),
@@ -52,13 +68,33 @@ pub fn on_capture(state: &AppState, conn: u64, request_id: String, browser: Stri
             probing: false,
             received_at: now_ms(),
         };
-        match state.engine.add(new_job_for(&pending, AcceptOptions { start: true, ..Default::default() })) {
-            Ok(_) => state.send(conn, &ToBrowser::Decision { reply_to: request_id, decision: Decision::TakeOver }),
-            Err(e) => {
-                tracing::warn!("silent capture failed: {e}");
-                state.send(conn, &ToBrowser::Decision { reply_to: request_id, decision: Decision::ResumeInBrowser });
-            }
-        }
+        state.send(conn, &ToBrowser::Received { reply_to: request_id.clone() });
+        let state = state.clone();
+        tauri::async_runtime::spawn(async move {
+            let req = probe_request(&pending.capture);
+            let result = if pending.capture.kind == CaptureKind::Video {
+                state.engine.probe_media(req).await
+            } else {
+                state.engine.probe(req).await
+            };
+            let decision = match result {
+                Ok(info) if !(state.engine.settings().interception.skip_web_pages && info.looks_like_html) => {
+                    pending.probe = Some(info);
+                    match state.engine.add(new_job_for(&pending, AcceptOptions { start: true, ..Default::default() })) {
+                        Ok(_) => Decision::TakeOver,
+                        Err(_) => Decision::ResumeInBrowser,
+                    }
+                }
+                Ok(info) => {
+                    if let Some(id) = info.probe_id {
+                        state.engine.discard_probe(id);
+                    }
+                    Decision::ResumeInBrowser
+                }
+                Err(_) => Decision::ResumeInBrowser,
+            };
+            state.send(conn, &ToBrowser::Decision { reply_to: request_id, decision });
+        });
         return;
     }
 
@@ -91,7 +127,8 @@ pub fn add_manual(state: &AppState, url: Option<String>) -> Uuid {
         request_id: None,
         browser: None,
         capture: Capture {
-            kind: CaptureKind::Manual,
+            media_format: None,
+            kind: if url.as_deref().is_some_and(crowdm_engine::media::is_media_url) { CaptureKind::Video } else { CaptureKind::Manual },
             browser_download_id: None,
             url: url.unwrap_or_default().trim().to_string(),
             final_url: None,
@@ -125,6 +162,11 @@ pub fn set_url(state: &AppState, key: Uuid, url: String) -> Result<(), String> {
             state.engine.discard_probe(p);
         }
         c.capture.url = url.trim().to_string();
+        c.capture.final_url = None;
+        c.capture.media_format = None;
+        if c.capture.kind == CaptureKind::Manual && crowdm_engine::media::is_media_url(&c.capture.url) {
+            c.capture.kind = CaptureKind::Video;
+        }
         c.probe_error = None;
         c.probing = true;
     }
@@ -133,28 +175,59 @@ pub fn set_url(state: &AppState, key: Uuid, url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn probe_request(cap: &Capture) -> ProbeRequest {
+    ProbeRequest {
+        media_format: cap.media_format.clone(),
+        url: cap.final_url.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| cap.url.clone()),
+        referrer: cap.referrer.clone().or_else(|| cap.page_url.clone()),
+        headers: cap.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect(),
+        file_name_hint: cap.file_name.clone(),
+        mime_hint: cap.mime.clone(),
+    }
+}
+
+pub fn set_media_format(state: &AppState, key: Uuid, format: String) -> Result<(), String> {
+    {
+        let mut caps = state.captures.lock();
+        let c = caps.iter_mut().find(|c| c.key == key).ok_or("This download is no longer waiting.")?;
+        if c.capture.kind != CaptureKind::Video || !c.probe.as_ref().is_some_and(|p| p.media_options.iter().any(|f| f.format == format)) {
+            return Err("Choose one of the available video qualities.".into());
+        }
+        if let Some(info) = &mut c.probe {
+            crowdm_engine::media::select_output(info, &format, &state.engine.settings());
+        }
+        c.capture.media_format = Some(format);
+    }
+    changed(state);
+    Ok(())
+}
+
 fn spawn_probe(state: AppState, key: Uuid) {
     tauri::async_runtime::spawn(async move {
-        let req = {
+        let (req, video) = {
             let caps = state.captures.lock();
             let Some(c) = caps.iter().find(|c| c.key == key) else { return };
-            let cap = &c.capture;
-            ProbeRequest {
-                url: cap.final_url.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| cap.url.clone()),
-                referrer: cap.referrer.clone().or_else(|| cap.page_url.clone()),
-                headers: cap.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect(),
-                file_name_hint: cap.file_name.clone(),
-                mime_hint: cap.mime.clone(),
-            }
+            (probe_request(&c.capture), c.capture.kind == CaptureKind::Video)
         };
-        let result = state.engine.probe(req).await;
+        let requested_url = req.url.clone();
+        let result = if video { state.engine.probe_media(req).await } else { state.engine.probe(req).await };
+        if !state.captures.lock().iter().any(|c| c.key == key && probe_request(&c.capture).url == requested_url) {
+            if let Ok(info) = result {
+                if let Some(id) = info.probe_id {
+                    state.engine.discard_probe(id);
+                }
+            }
+            return;
+        }
         // The browser often learns the real file name only from the server
         // (Content-Disposition), so exclusion rules are checked again here.
         if let Ok(info) = &result {
             let excluded = {
                 let caps = state.captures.lock();
                 caps.iter().find(|c| c.key == key).is_some_and(|c| {
-                    c.capture.kind == CaptureKind::Intercepted && is_excluded(&state.engine.settings(), &info.file_name, info.size)
+                    c.capture.kind == CaptureKind::Intercepted
+                        && (is_excluded(&state.engine.settings(), &info.file_name, info.size)
+                            || state.engine.settings().interception.skip_web_pages && info.looks_like_html)
                 })
             };
             if excluded {
@@ -222,7 +295,9 @@ fn new_job_for(c: &PendingCapture, o: AcceptOptions) -> NewJob {
         .filter(|s| !s.is_empty())
         .and_then(|h| crowdm_engine::checksum::guess_algo(h).map(|algo| Checksum { algo, expected: h.to_ascii_lowercase() }));
     NewJob {
-        url: cap.url.clone(),
+        media_download: cap.kind == CaptureKind::Video,
+        media_format: cap.media_format.clone(),
+        url: cap.final_url.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| cap.url.clone()),
         referrer: cap.referrer.clone().or_else(|| cap.page_url.clone()),
         headers: cap.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect(),
         file_name: o
@@ -247,8 +322,8 @@ fn new_job_for(c: &PendingCapture, o: AcceptOptions) -> NewJob {
             browser: c.browser.clone(),
         },
         probe_id: c.probe.as_ref().and_then(|p| p.probe_id),
-        size_hint: cap.size,
-        mime_hint: cap.mime.clone(),
+        size_hint: c.probe.as_ref().and_then(|p| p.size).or(cap.size),
+        mime_hint: c.probe.as_ref().and_then(|p| p.mime.clone()).or(cap.mime.clone()),
         overwrite: false,
     }
 }
@@ -272,6 +347,16 @@ pub fn accept(state: &AppState, key: Uuid, options: AcceptOptions) -> Result<Job
     };
     if c.capture.url.trim().is_empty() {
         return Err("Enter a download address first.".into());
+    }
+    if c.probing {
+        return Err("Please wait while CrowDM checks this download.".into());
+    }
+    if let Some(error) = &c.probe_error {
+        return Err(error.clone());
+    }
+    let probe = c.probe.as_ref().ok_or("Check the download address before starting.")?;
+    if probe.looks_like_html && state.engine.settings().interception.skip_web_pages {
+        return Err("This address returned a web page. Use the video button or download it in the browser.".into());
     }
     let id = state.engine.add(new_job_for(&c, options)).map_err(|e| e.to_string())?;
     take(state, key);

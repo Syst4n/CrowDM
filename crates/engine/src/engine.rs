@@ -56,6 +56,7 @@ pub enum EngineEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeRequest {
+    pub media_format: Option<String>,
     pub url: String,
     pub referrer: Option<String>,
     #[serde(default)]
@@ -312,6 +313,13 @@ impl Engine {
 
     // ----- probing -------------------------------------------------------
 
+    pub async fn probe_media(&self, req: ProbeRequest) -> Result<ProbeInfo> {
+        validate_url(&req.url)?;
+        let mut info = crate::media::probe(req, &self.settings()).await?;
+        info.duplicate_of = self.find_by_url(&info.final_url);
+        Ok(info)
+    }
+
     /// Opens the URL to learn its name, size and resumability. The open
     /// response is kept for a minute so that confirming the download reuses
     /// it instead of requesting the file twice (important for one-time links).
@@ -351,6 +359,8 @@ impl Engine {
         let duplicate_of = self.find_by_url(&req.url).or_else(|| self.find_by_url(&meta.final_url));
         let probe_id = Uuid::new_v4();
         let info = ProbeInfo {
+            size_estimated: false,
+            media_options: vec![],
             probe_id: Some(probe_id),
             final_url: meta.final_url.clone(),
             file_name,
@@ -382,7 +392,15 @@ impl Engine {
         let pending = new.probe_id.and_then(|id| self.inner.probes.lock().remove(&id));
         let meta = pending.as_ref().map(|p| &p.meta);
         let mime = meta.and_then(|m| m.mime.clone()).or(new.mime_hint.clone());
-        let file_name = match &new.file_name {
+        if settings.interception.skip_web_pages
+            && (meta.is_some_and(|m| m.looks_like_html())
+                || mime.as_deref().is_some_and(|m| m.starts_with("text/html") || m.starts_with("application/xhtml")))
+        {
+            return Err(EngineError::Invalid(
+                "Web-page downloads are disabled in Settings. Use the video button to download streaming media.".into(),
+            ));
+        }
+        let mut file_name = match &new.file_name {
             Some(n) if !n.trim().is_empty() => names::sanitize(n),
             _ => names::choose(
                 meta.and_then(|m| m.content_disposition.as_deref()),
@@ -391,6 +409,10 @@ impl Engine {
                 mime.as_deref(),
             ),
         };
+        if new.media_download {
+            let extension = crate::media::output_format(new.media_format.as_deref()).0;
+            file_name = format!("{}.{extension}", std::path::Path::new(&file_name).file_stem().unwrap_or_default().to_string_lossy());
+        }
         let category = new
             .category
             .clone()
@@ -403,6 +425,8 @@ impl Engine {
         let now = now_ms();
         let size = meta.and_then(|m| m.total_size()).or(new.size_hint);
         let job = Job {
+            media_download: new.media_download,
+            media_format: new.media_format.clone(),
             id: Uuid::new_v4(),
             url: new.url.clone(),
             final_url: meta.map(|m| m.final_url.clone()),
@@ -412,7 +436,7 @@ impl Engine {
             dir,
             category,
             size,
-            resumable: None,
+            resumable: if new.media_download { Some(true) } else { None },
             etag: None,
             last_modified: None,
             mime,
@@ -527,6 +551,7 @@ impl Engine {
         let outcome: Result<(), Stop> = loop {
             let settings = self.settings();
             let cfg = TransferConfig {
+                reject_html: settings.interception.skip_web_pages,
                 max_connections: {
                     let jobs = self.inner.jobs.lock();
                     jobs.get(&id)
@@ -540,7 +565,12 @@ impl Engine {
                 Limits { global: self.inner.global_limit.clone(), job: limiter.clone(), connections: self.inner.connections.clone() };
             let client = self.inner.client.read().clone();
             let hooks = self.hooks(id);
-            let res = transfer::run(client, input, shared.clone(), limits, cfg, cancel.clone(), hooks).await;
+            let media_job = self.inner.jobs.lock().get(&id).filter(|e| e.job.media_download).map(|e| e.job.clone());
+            let res = if let Some(job) = media_job {
+                crate::media::run(job, shared.clone(), cancel.clone(), limiter.clone(), self.inner.global_limit.clone()).await
+            } else {
+                transfer::run(client, input, shared.clone(), limits, cfg, cancel.clone(), hooks).await
+            };
             self.learn_host_limit(id, &shared);
             match res {
                 Ok(done) => {
@@ -861,6 +891,9 @@ impl Engine {
         self.inner.store.delete_job(&id)?;
         if entry.job.state != JobState::Completed {
             let _ = std::fs::remove_file(entry.job.part_path());
+            if entry.job.media_download {
+                crate::media::cleanup(&entry.job);
+            }
         }
         self.emit(EngineEvent::JobRemoved { id });
         self.pump_queue();
@@ -875,6 +908,9 @@ impl Engine {
             let mut jobs = self.inner.jobs.lock();
             let entry = jobs.get_mut(&id).ok_or(EngineError::NotFound)?;
             let _ = std::fs::remove_file(entry.job.part_path());
+            if entry.job.media_download {
+                crate::media::cleanup(&entry.job);
+            }
             if entry.job.state == JobState::Completed {
                 // Pick a fresh name so the finished copy is not overwritten.
                 let taken: HashSet<String> = HashSet::new();
@@ -928,6 +964,7 @@ impl Engine {
                 return Err(EngineError::Invalid("This download has already finished.".into()));
             }
             if patch.file_name.is_some() || patch.dir.is_some() {
+                let old_media_job = j.media_download.then(|| j.clone());
                 let old_part = j.part_path();
                 if let Some(n) = patch.file_name {
                     j.file_name = names::sanitize(&n);
@@ -936,6 +973,15 @@ impl Engine {
                     j.dir = d;
                 }
                 let new_part = j.part_path();
+                if let Some(old) = old_media_job {
+                    if old.dir != j.dir && crate::media::staging_dir(&old).exists() {
+                        std::fs::create_dir_all(&j.dir)?;
+                        if std::fs::rename(crate::media::staging_dir(&old), crate::media::staging_dir(j)).is_err() {
+                            crate::media::cleanup(&old);
+                            j.downloaded = 0;
+                        }
+                    }
+                }
                 if old_part != new_part && old_part.exists() {
                     if let Some(p) = new_part.parent() {
                         std::fs::create_dir_all(p)?;
@@ -951,6 +997,12 @@ impl Engine {
             }
             if let Some(url) = patch.url {
                 validate_url(&url)?;
+                if j.media_download && url != j.url {
+                    crate::media::cleanup(j);
+                    let _ = std::fs::remove_file(j.part_path());
+                    j.downloaded = 0;
+                    entry.segments.clear();
+                }
                 // Same file, new address (e.g. a refreshed signed link). The
                 // size/validator checks on resume still protect the data.
                 j.url = url;
@@ -1052,6 +1104,12 @@ impl Engine {
         let mut items = Vec::new();
         {
             let mut jobs = self.inner.jobs.lock();
+            // All HTTP workers share one bucket. Each external media process
+            // gets one equal share of the same configured global budget.
+            let media = jobs.values().filter(|e| e.run.is_some() && e.job.media_download).count() as u64;
+            let http = u64::from(jobs.values().any(|e| e.run.is_some() && !e.job.media_download));
+            let total = self.inner.settings.read().speed_limit;
+            self.inner.global_limit.set_rate(if total == 0 { 0 } else { (total / (media + http).max(1)).max(1) });
             for entry in jobs.values_mut() {
                 let phase_outside = entry.phase.clone();
                 let Some(run) = entry.run.as_mut() else { continue };

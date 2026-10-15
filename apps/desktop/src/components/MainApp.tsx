@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, errorText } from "../lib/api";
 import { matchesFilter, sortJobs, startEngineSync, useStore } from "../lib/store";
@@ -17,7 +17,7 @@ export function MainApp() {
   const view = useStore((s) => s.view);
   const toast = useStore((s) => s.toast);
   const [removing, setRemoving] = useState<string[] | null>(null);
-  useTheme(settings?.theme);
+  useTheme(settings);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -35,7 +35,7 @@ export function MainApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest("input, textarea, select")) return;
+      if (target.closest('input, textarea, select, [role="combobox"], [role="listbox"]')) return;
       if (e.ctrlKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         api.captureNew();
@@ -78,6 +78,18 @@ export function MainApp() {
 }
 
 function Downloads({ onRemove }: { onRemove: (ids: string[]) => void }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [detailsHeight, setDetailsHeight] = useState(() => {
+    const saved = Number(localStorage.getItem("crowdm.detailsHeight"));
+    return Number.isFinite(saved) && saved >= 120 ? saved : 180;
+  });
+  const drag = useRef<{ y: number; height: number } | null>(null);
+  const resizeDetails = (height: number) => {
+    const max = Math.max(120, (contentRef.current?.clientHeight ?? 600) - 160);
+    const next = Math.round(Math.max(120, Math.min(max, height)));
+    setDetailsHeight(next);
+    localStorage.setItem("crowdm.detailsHeight", String(next));
+  };
   const jobs = useStore((s) => s.jobs);
   const listVersion = useStore((s) => s.listVersion);
   const filter = useStore((s) => s.filter);
@@ -97,9 +109,18 @@ function Downloads({ onRemove }: { onRemove: (ids: string[]) => void }) {
 
   const single = selected.length === 1 ? jobs[selected[0]] : undefined;
   return (
-    <div className="content">
+    <div className="content" ref={contentRef}>
       <JobList ids={ids} onRemove={onRemove} />
-      {single && <Details job={single} onRemove={onRemove} />}
+      {single && <div className="details-pane" style={{ height: detailsHeight }}>
+        <div className="details-resizer" role="separator" aria-label="Resize download details" aria-orientation="horizontal"
+          aria-valuemin={120} aria-valuenow={detailsHeight} aria-valuemax={Math.max(120, (contentRef.current?.clientHeight ?? 600) - 160)} tabIndex={0}
+          onPointerDown={(e) => { drag.current = { y: e.clientY, height: e.currentTarget.parentElement!.clientHeight }; e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={(e) => { if (drag.current) resizeDetails(drag.current.height + drag.current.y - e.clientY); }}
+          onPointerUp={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
+          onDoubleClick={() => resizeDetails(180)}
+          onKeyDown={(e) => { if (["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) { e.preventDefault(); resizeDetails(e.key === "Home" ? 120 : e.key === "End" ? 10000 : detailsHeight + (e.key === "ArrowUp" ? 20 : -20)); } }} />
+        <Details job={single} onRemove={onRemove} />
+      </div>}
     </div>
   );
 }

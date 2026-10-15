@@ -592,8 +592,9 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crowdm-desktop"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
+ "base64 0.22.1",
  "crowdm-engine",
  "crowdm-ipc",
  "parking_lot",
@@ -614,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-engine"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -645,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-host"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "crowdm-ipc",
  "serde_json",
@@ -656,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-ipc"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -664,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-testserver"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "http-body",
@@ -4280,6 +4281,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

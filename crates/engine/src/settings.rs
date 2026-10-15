@@ -60,6 +60,8 @@ pub struct Interception {
     pub include_private: bool,
     /// Show the "Download this video" button over web video players.
     pub video_button: bool,
+    /// Leave HTML documents in the browser and reject HTML responses.
+    pub skip_web_pages: bool,
 }
 
 impl Default for Interception {
@@ -71,6 +73,7 @@ impl Default for Interception {
             min_size: 0,
             include_private: false,
             video_button: true,
+            skip_web_pages: true,
         }
     }
 }
@@ -82,6 +85,56 @@ pub enum Theme {
     System,
     Light,
     Dark,
+    Nightwing,
+    Ocean,
+    Forest,
+    Sand,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ColorMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Palette {
+    #[default]
+    Classic,
+    Nightwing,
+    Ocean,
+    Forest,
+    Sand,
+    Rose,
+    Violet,
+    Amber,
+    Slate,
+    Cherry,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Appearance {
+    pub mode: ColorMode,
+    pub palette: Palette,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PowerManagement {
+    pub prevent_sleep_active: bool,
+    pub prevent_sleep_scheduled: bool,
+    pub allow_sleep_resumable: bool,
+}
+
+impl Default for PowerManagement {
+    fn default() -> Self {
+        Self { prevent_sleep_active: true, prevent_sleep_scheduled: true, allow_sleep_resumable: false }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,6 +165,10 @@ pub struct Settings {
     pub schedule: Schedule,
     pub interception: Interception,
     pub theme: Theme,
+    /// None migrates the previous combined theme without changing its colors.
+    pub appearance: Option<Appearance>,
+    pub animations: bool,
+    pub respect_reduced_motion: bool,
     pub close_to_tray: bool,
     pub start_with_windows: bool,
     pub start_minimized: bool,
@@ -123,6 +180,7 @@ pub struct Settings {
     pub prewarm_dialog: bool,
     /// Play a sound on completion.
     pub sound_on_complete: bool,
+    pub power: PowerManagement,
 }
 
 impl Default for Settings {
@@ -143,6 +201,9 @@ impl Default for Settings {
             schedule: Schedule::default(),
             interception: Interception::default(),
             theme: Theme::System,
+            appearance: None,
+            animations: true,
+            respect_reduced_motion: true,
             close_to_tray: true,
             start_with_windows: false,
             start_minimized: false,
@@ -150,6 +211,7 @@ impl Default for Settings {
             confirm_captured: true,
             prewarm_dialog: false,
             sound_on_complete: false,
+            power: PowerManagement::default(),
         }
     }
 }
@@ -178,6 +240,17 @@ pub fn default_categories() -> Vec<Category> {
 }
 
 impl Settings {
+    pub fn effective_appearance(&self) -> Appearance {
+        self.appearance.unwrap_or_else(|| match self.theme {
+            Theme::System => Appearance::default(),
+            Theme::Light => Appearance { mode: ColorMode::Light, palette: Palette::Classic },
+            Theme::Dark => Appearance { mode: ColorMode::Dark, palette: Palette::Classic },
+            Theme::Nightwing => Appearance { mode: ColorMode::Dark, palette: Palette::Nightwing },
+            Theme::Ocean => Appearance { mode: ColorMode::Dark, palette: Palette::Ocean },
+            Theme::Forest => Appearance { mode: ColorMode::Dark, palette: Palette::Forest },
+            Theme::Sand => Appearance { mode: ColorMode::Light, palette: Palette::Sand },
+        })
+    }
     /// Normalizes values that could break the engine.
     pub fn sanitized(mut self) -> Self {
         self.max_connections_per_download = self.max_connections_per_download.clamp(1, 32);
@@ -231,6 +304,18 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_themes_migrate_and_mode_is_independent_of_palette() {
+        let old: Settings = serde_json::from_str(r#"{"theme":"sand"}"#).unwrap();
+        assert_eq!(old.effective_appearance(), Appearance { mode: ColorMode::Light, palette: Palette::Sand });
+        assert!(old.animations && old.respect_reduced_motion);
+        let mut new = old;
+        new.appearance = Some(Appearance { mode: ColorMode::Dark, palette: Palette::Sand });
+        let saved: Settings = serde_json::from_str(&serde_json::to_string(&new).unwrap()).unwrap();
+        assert_eq!(saved.effective_appearance().mode, ColorMode::Dark);
+        assert_eq!(saved.effective_appearance().palette, Palette::Sand);
+        assert!(Settings::default().organize_by_category);
+    }
 
     #[test]
     fn categorizes_by_extension() {

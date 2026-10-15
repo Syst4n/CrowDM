@@ -6,6 +6,7 @@ mod captures;
 mod commands;
 mod pipe;
 mod platform;
+mod previews;
 mod state;
 mod tray;
 mod windows;
@@ -148,7 +149,7 @@ fn main() {
     };
 
     init_logging(&data_dir);
-    tracing::info!("CrowDM {} starting, args {:?}", env!("CARGO_PKG_VERSION"), args);
+    tracing::info!("CrowDM {} starting", env!("CARGO_PKG_VERSION"));
     let background = args.iter().any(|a| a == "--background");
 
     let app = tauri::Builder::default()
@@ -157,11 +158,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::list_jobs,
+            previews::job_thumbnail,
             commands::get_settings,
             commands::save_settings,
             commands::capture_list,
             commands::capture_new,
             commands::capture_set_url,
+            commands::capture_set_media_format,
             commands::capture_accept,
             commands::capture_to_browser,
             commands::capture_dismiss,
@@ -195,12 +198,22 @@ fn main() {
             #[cfg(windows)]
             pipe::start(state.clone(), first_pipe);
             #[cfg(windows)]
-            if let Err(e) = platform::register_browsers(&data_dir) {
-                tracing::warn!("browser registration failed: {e}");
+            if std::env::var_os("CROWDM_TEST_INSTANCE").is_none() {
+                if let Err(e) = platform::register_browsers(&data_dir) {
+                    tracing::warn!("browser registration failed: {e}");
+                }
             }
             tray::create(app)?;
             forward_engine_events(state.clone());
+            #[cfg(windows)]
+            platform::start_power_management(state.clone());
             let settings = state.engine.settings();
+            #[cfg(windows)]
+            if settings.start_with_windows && std::env::var_os("CROWDM_TEST_INSTANCE").is_none() {
+                if let Err(error) = platform::set_autostart(true) {
+                    tracing::warn!("could not restore startup entry: {error}");
+                }
+            }
             if settings.prewarm_dialog {
                 windows::ensure_capture(app.handle());
             }

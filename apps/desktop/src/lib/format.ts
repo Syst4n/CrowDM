@@ -45,7 +45,7 @@ export function when(ms: number | null | undefined): string {
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (sameDay) return time;
   if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
-  return d.toLocaleDateString([], { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+  return `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" })}, ${time}`;
 }
 
 export function host(url: string | null | undefined): string {

@@ -23,6 +23,12 @@ body {
   color: var(--text);
   font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
 }
+[data-theme="light"] { color-scheme: light; --bg: #fff; --text: #15181d; --muted: #545c67; --accent: #0e8177; --border: #cdd2d9; --on-accent: #fff; }
+[data-theme="dark"] { color-scheme: dark; --bg: #16191e; --text: #e7e9ec; --muted: #a4abb4; --accent: #38c1b0; --border: #353b45; --on-accent: #06201d; }
+[data-theme="nightwing"] { color-scheme: dark; --bg: #151d29; --text: #e3eaf3; --muted: #abb9cc; --accent: #94bde8; --border: #3a4b61; --on-accent: #122337; }
+[data-theme="ocean"] { color-scheme: dark; --bg: #162731; --text: #e0ecef; --muted: #aac1cb; --accent: #77c7cd; --border: #3a5663; --on-accent: #102a30; }
+[data-theme="forest"] { color-scheme: dark; --bg: #1b2921; --text: #e5ece4; --muted: #b2c2b3; --accent: #a7c99b; --border: #435b4b; --on-accent: #1b301c; }
+[data-theme="sand"] { color-scheme: light; --bg: #fcf8f1; --text: #342c25; --muted: #685c4e; --accent: #956125; --border: #cbbca5; --on-accent: #fffaf2; }
 header {
   display: flex;
   align-items: center;
@@ -66,7 +72,7 @@ button {
   border-radius: 6px;
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent, #fff);
   font: 600 13px "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
 }

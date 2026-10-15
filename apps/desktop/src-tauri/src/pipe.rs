@@ -101,10 +101,44 @@ fn on_message(state: &AppState, conn: u64, msg: FromBrowser) {
             crate::commands::emit_browser_status(state);
         }
         FromBrowser::Capture { id, browser, capture } => {
-            tracing::info!("capture from {browser}: {:?} {}", capture.kind, capture.url);
+            tracing::info!("capture from {browser}: {:?}", capture.kind);
             captures::on_capture(state, conn, id, browser, capture);
         }
         FromBrowser::CaptureGone { id } => captures::capture_gone(state, conn, &id),
+        FromBrowser::VideoOptions { id, capture } => {
+            let state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                let req = crowdm_engine::ProbeRequest {
+                    url: capture.url,
+                    referrer: capture.referrer.or(capture.page_url),
+                    headers: capture.headers.into_iter().map(|h| (h.name, h.value)).collect(),
+                    ..Default::default()
+                };
+                match state.engine.probe_media(req).await {
+                    Ok(info) => state.send(
+                        conn,
+                        &ToBrowser::VideoOptions {
+                            reply_to: id,
+                            title: info.file_name,
+                            formats: info
+                                .media_options
+                                .into_iter()
+                                .map(|f| crowdm_ipc::VideoOption {
+                                    format: f.format,
+                                    label: f.label,
+                                    height: f.height,
+                                    container: f.container,
+                                    size: f.size,
+                                })
+                                .collect(),
+                        },
+                    ),
+                    Err(error) => {
+                        state.send(conn, &ToBrowser::Error { reply_to: Some(id), code: "videoOptions".into(), message: error.to_string() })
+                    }
+                }
+            });
+        }
         FromBrowser::Ping { id } => state.send(conn, &ToBrowser::Pong { reply_to: id }),
         FromBrowser::Activate { args } => crate::handle_args(state, &args, true),
     }

@@ -72,7 +72,7 @@ pub fn data_dir() -> PathBuf {
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
     use winreg::RegKey;
 
     fn manifest_json(firefox: bool, host: &Path) -> String {
@@ -139,7 +139,7 @@ mod imp {
 
     pub fn set_autostart(enabled: bool) -> std::io::Result<()> {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let key = hkcu.open_subkey_with_flags(RUN_KEY, KEY_READ | KEY_WRITE)?;
+        let (key, _) = hkcu.create_subkey(RUN_KEY)?;
         if enabled {
             let exe = std::env::current_exe()?;
             key.set_value("CrowDM", &format!("\"{}\" --background", exe.display()))?;
@@ -197,6 +197,32 @@ mod imp {
         unsafe {
             SetSuspendState(false, false, false);
         }
+    }
+
+    /// Execution state belongs to its calling thread; keep all updates and
+    /// the final release on this dedicated thread.
+    pub fn start_power_management(state: crate::state::AppState) {
+        std::thread::spawn(move || {
+            use windows_sys::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+            while !state.is_quitting() {
+                let s = state.engine.settings();
+                let jobs = state.engine.jobs();
+                let active: Vec<_> = jobs.iter().filter(|j| j.job.state.is_active()).collect();
+                let active_blocks = s.power.prevent_sleep_active
+                    && !active.is_empty()
+                    && !(s.power.allow_sleep_resumable && active.iter().all(|j| j.job.resumable == Some(true)));
+                let scheduled_blocks = s.power.prevent_sleep_scheduled
+                    && s.schedule.enabled
+                    && jobs.iter().any(|j| j.job.queued && j.job.state == crowdm_engine::JobState::Queued);
+                unsafe {
+                    SetThreadExecutionState(ES_CONTINUOUS | if active_blocks || scheduled_blocks { ES_SYSTEM_REQUIRED } else { 0 });
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            unsafe {
+                SetThreadExecutionState(ES_CONTINUOUS);
+            }
+        });
     }
 
     /// Schedules a shutdown in 60 seconds; `shutdown /a` cancels it.

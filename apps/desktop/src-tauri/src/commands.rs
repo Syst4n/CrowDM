@@ -51,13 +51,27 @@ pub fn get_settings(state: State<AppState>) -> Settings {
 #[tauri::command]
 pub fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     let before = state.engine.settings();
-    let saved = state.engine.update_settings(settings).map_err(err)?;
-    if before.start_with_windows != saved.start_with_windows {
+    if before.start_with_windows != settings.start_with_windows {
         #[cfg(windows)]
-        platform::set_autostart(saved.start_with_windows).map_err(err)?;
+        platform::set_autostart(settings.start_with_windows).map_err(err)?;
     }
-    if before.interception != saved.interception {
+    let saved = state.engine.update_settings(settings).map_err(err)?;
+    if before.theme != saved.theme || before.appearance != saved.appearance {
+        windows::apply_theme(&state.app);
+    }
+    if before.interception != saved.interception
+        || before.theme != saved.theme
+        || before.appearance != saved.appearance
+        || before.animations != saved.animations
+        || before.respect_reduced_motion != saved.respect_reduced_motion
+    {
         state.broadcast(&ToBrowser::Settings { settings: browser_settings(&saved) });
+    }
+    if before.download_root != saved.download_root
+        || before.organize_by_category != saved.organize_by_category
+        || before.categories != saved.categories
+    {
+        captures::refresh_folders(&state, &saved);
     }
     Ok(saved)
 }
@@ -77,6 +91,11 @@ pub fn capture_new(state: State<AppState>, url: Option<String>) -> Uuid {
 #[tauri::command]
 pub fn capture_set_url(state: State<AppState>, key: Uuid, url: String) -> R<()> {
     captures::set_url(&state, key, url)
+}
+
+#[tauri::command]
+pub fn capture_set_media_format(state: State<AppState>, key: Uuid, format: String) -> R<()> {
+    captures::set_media_format(&state, key, format)
 }
 
 #[tauri::command]

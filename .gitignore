@@ -24,3 +24,14 @@ Thumbs.db
 
 # Tauri sidecar copies (built by scripts/prepare-sidecar.mjs)
 apps/desktop/src-tauri/binaries/
+/tools/media/
+/docs/LOCAL_UPDATE*.md
+/docs/branding/
+/chatgpthandoff.md
+
+# Generated icons for platforms this Windows preview does not ship
+/apps/desktop/src-tauri/icons/android/
+/apps/desktop/src-tauri/icons/ios/
+/apps/desktop/src-tauri/icons/icon.icns
+/apps/desktop/src-tauri/icons/Square*Logo.png
+/apps/desktop/src-tauri/icons/StoreLogo.png

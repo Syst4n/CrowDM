@@ -20,15 +20,15 @@ installer size and maintainability.
   WebView2 costs 110-150 MB only while a window is loaded. Releasing windows
   when idle keeps the resident cost low. WinUI 3 would use less memory with a
   window open (tens of MB), which is the main argument for it.
-- *Installer size.* The NSIS installer is about 4 MB because WebView2 ships
-  with Windows 10/11. A self-contained WinUI 3/.NET app is typically tens of
-  MB; framework-dependent needs the Windows App SDK runtime installed.
+- *Installer size.* The original file-transfer installer was about 4 MB;
+  the video-capable preview is about 88 MiB with bundled media tools.
+  WebView2 is shared with Windows. A self-contained WinUI 3/.NET app also
+  requires its runtime; a framework-dependent build needs the Windows App SDK.
 - *Engine.* The engine is the product's core and benefits most from Rust
   (predictable memory, no GC pauses under many connections, direct Win32 file
   APIs). With WinUI 3 it would still be Rust (FFI) or be rewritten in C#.
-- *Maintainability.* One language for the core and the host; the UI in React,
-  which most contributors (including other AI assistants) handle well; the
-  same web stack as the extensions.
+- *Maintainability.* One language for the core and the host, with React for
+  the UI and the same web stack as the extensions.
 
 **Would change if** idle memory with a window open becomes the main
 complaint, or a native Windows 11 look is required. The engine and host are

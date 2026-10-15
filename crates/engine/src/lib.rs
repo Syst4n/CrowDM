@@ -11,6 +11,7 @@ mod engine;
 pub mod error;
 pub mod file;
 pub mod http;
+pub mod media;
 pub mod model;
 pub mod names;
 pub mod ratelimit;

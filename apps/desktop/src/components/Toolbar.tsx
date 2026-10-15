@@ -1,6 +1,7 @@
 import { FolderOpen, HandPalm, MagnifyingGlass, Pause, Play, Plus, Queue, Trash } from "@phosphor-icons/react";
 import { api, errorText } from "../lib/api";
-import { useStore } from "../lib/store";
+import { SORT_OPTIONS, useStore, type SortKey } from "../lib/store";
+import { Select } from "./Select";
 
 export function Toolbar({ onRemove }: { onRemove: (ids: string[]) => void }) {
   const selected = useStore((s) => s.selected);
@@ -9,6 +10,8 @@ export function Toolbar({ onRemove }: { onRemove: (ids: string[]) => void }) {
   const setSearch = useStore((s) => s.setSearch);
   const queueRunning = useStore((s) => s.queueRunning);
   const showToast = useStore((s) => s.showToast);
+  const sort = useStore((s) => s.sort);
+  const setSort = useStore((s) => s.setSort);
 
   const sel = selected.map((id) => jobs[id]).filter(Boolean);
   const canResume = sel.some((j) => j.state === "paused" || j.state === "failed" || j.state === "queued");
@@ -44,6 +47,9 @@ export function Toolbar({ onRemove }: { onRemove: (ids: string[]) => void }) {
         {queueRunning ? "Hold queue" : "Start queue"}
       </button>
       <div className="spacer" />
+      <Select className="select sort-select" aria-label="Sort downloads" value={sort} onValueChange={(value) => setSort(value as SortKey)}>
+        {SORT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </Select>
       <div className="search">
         <MagnifyingGlass size={15} />
         <input className="input" placeholder="Search downloads" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search downloads" />

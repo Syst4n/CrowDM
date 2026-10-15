@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useStore, type Filter } from "../lib/store";
 import { FileIcon } from "./FileIcon";
+import { Logo } from "./Logo";
 import type { Category } from "../lib/api";
 
 const NO_CATEGORIES: Category[] = [];
@@ -49,7 +50,7 @@ export function Sidebar() {
   return (
     <nav className="sidebar" aria-label="Filters">
       <div className="brand">
-        <img src="/logo.svg" alt="" />
+        <Logo size={34} />
         CrowDM
       </div>
       {item({ kind: "all" }, "All downloads", <DownloadSimple size={18} />, counts.c.all)}

@@ -2,6 +2,47 @@
 
 ## Automated suites
 
+Local update regression checks (2026-10-15):
+
+The 0.2.1 preview passed 96 native UI checks, 7 background checks, 12 overlay
+checks, 5 real Chromium/native-host checks and 46 Rust workspace tests with
+real media fixtures enabled. A fresh portable extraction also completed MP3
+conversion using its bundled tools. The installed upgrade preserved all
+eight existing jobs, including the paused job and its stored destination.
+
+- `node --test extensions/tests/background.test.mjs`: HTML exclusions,
+  YouTube watch-page and playlist/SPA routing, stale-selection rejection,
+  frame-scoped manifests, navigation cleanup,
+  private sessions, disabled interception and site exclusions.
+- `$env:CROWDM_MEDIA_TESTS='1'; cargo test -p crowdm-engine --test media`:
+  generates cookie-protected direct MP4, HLS and DASH fixtures, exercises real
+  yt-dlp/FFmpeg, verifies MP4 and MKV video/audio tracks, audio-only MP3,
+  live-HLS rejection, selected resolutions, pause/resume, queues and persisted
+  completion. Run `scripts/prepare-media.ps1` first.
+- `node tools/e2e/updates.mjs`: isolated native host + actual WebView2 UI,
+  sorting, timestamps, details drag, popup sizing/reuse/stale probes, HTML
+  hand-back, MP4 selection, MP3 completion and Audio folder changes, local image,
+  video (including a black intro) and embedded-artwork previews, twenty
+  mode/palette combinations with text/button contrast, live themed dropdowns,
+  motion preview and reduced-motion preferences, changed download roots and
+  category-folder routing, and narrow-window layout. Requires the release
+  desktop/host and `playwright-core` from `tools/package.json`. Screenshots
+  and results go under `target/ui-updates-*`.
+- `node tools/e2e/video-overlay.mjs`: isolated browser component check for
+  icon placement/opacity, hover expansion, available-quality menu, selected
+  quality messages, acknowledgement and playlist/SPA changes. Native quality enumeration is
+  checked in the desktop suite, and the media suite verifies a real 90p
+  selection from a 90p/180p HLS master produces a 90p output file.
+- `node tools/e2e/browser-preview.mjs`: real Chromium, extension, native host
+  and WebView2 in separate profiles. A normal file is byte-exact and the
+  browser copy is cancelled after takeover; the video overlay queries native
+  formats and completes an MP3. Only a temporary, uniquely named test host
+  registry key is created and removed. It never changes the user's host.
+
+`CROWDM_TEST_INSTANCE` isolates the pipe and suppresses browser registration;
+`CROWDM_DATA_DIR` isolates data. The new regression runner does not terminate
+the user's app or change the installed browser connection.
+
 | Suite | Command | What it covers |
 |---|---|---|
 | Engine unit + integration | `cargo test -p crowdm-engine` | Filenames, Content-Disposition, sanitizing, collisions, ranges, sparse files, checksums, rate limiting, and 19 full transfers against the local test server (below). |

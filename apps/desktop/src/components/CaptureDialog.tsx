@@ -5,26 +5,46 @@ import { CaretDown, CaretRight, Folder, Globe } from "@phosphor-icons/react";
 import { api, errorText, onCaptures, type CaptureView, type Settings } from "../lib/api";
 import { useTheme } from "../lib/theme";
 import * as fmt from "../lib/format";
-import { FileIcon } from "./FileIcon";
+import { Logo } from "./Logo";
+import { Select } from "./Select";
 
 const BROWSER: Record<string, string> = { chrome: "Chrome", edge: "Edge", firefox: "Firefox", chromium: "Chromium", brave: "Brave" };
 
 export function CaptureDialog() {
   const [captures, setCaptures] = useState<CaptureView[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
-  useTheme(settings?.theme);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useTheme(settings);
 
   useEffect(() => {
-    const refresh = () => {
-      api.captureList().then(setCaptures);
-      api.getSettings().then(setSettings);
+    let disposed = false;
+    let revision = 0;
+    let un: (() => void) | undefined;
+    let unFocus: (() => void) | undefined;
+    const refresh = async () => {
+      const before = revision;
+      try {
+        const [list, nextSettings] = await Promise.all([api.captureList(), api.getSettings()]);
+        if (disposed) return;
+        if (before === revision) setCaptures(list);
+        setSettings(nextSettings);
+        setLoadError(null);
+      } catch (e) { if (!disposed) setLoadError(errorText(e)); }
     };
-    refresh();
-    const un = onCaptures(setCaptures);
-    const unFocus = getCurrentWindow().onFocusChanged(({ payload }) => payload && refresh());
+    // Subscribe before reading the snapshot; do not overwrite a newer event
+    // with an older command response. Poll also recovers missed IPC events.
+    onCaptures((list) => { revision++; if (!disposed) setCaptures(list); }).then((f) => {
+      if (disposed) { f(); return; }
+      un = f;
+      void refresh();
+    }).catch((e) => { if (!disposed) setLoadError(errorText(e)); });
+    getCurrentWindow().onFocusChanged(({ payload }) => { if (payload) void refresh(); }).then((f) => { if (disposed) f(); else unFocus = f; });
+    const timer = window.setInterval(refresh, 1500);
     return () => {
-      un.then((f) => f());
-      unFocus.then((f) => f());
+      disposed = true;
+      clearInterval(timer);
+      un?.();
+      unFocus?.();
     };
   }, []);
 
@@ -42,7 +62,11 @@ export function CaptureDialog() {
     });
   }, [hasCurrent]);
   if (!current || !settings) {
-    return <div className="capture" />;
+    return <div className="capture capture-loading" role="status">
+      <strong>{loadError ? "Could not load download details" : "Waiting for download details…"}</strong>
+      {loadError && <p>{loadError}</p>}
+      <button className="btn" onClick={() => getCurrentWindow().hide()}>Close</button>
+    </div>;
   }
   return <CaptureForm key={current.key} c={current} settings={settings} waiting={captures.length - 1} />;
 }
@@ -62,7 +86,30 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const startRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  const fieldsRef = useRef<HTMLDivElement>(null);
   const needsUrl = c.kind === "manual" && !c.url;
+
+  useEffect(() => {
+    const root = formRef.current;
+    const fields = fieldsRef.current;
+    if (!root || !fields) return;
+    let frame = 0;
+    const resize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const head = root.querySelector(".capture-head")!.getBoundingClientRect().height;
+        const foot = root.querySelector(".capture-foot")!.getBoundingClientRect().height;
+        const height = Math.min(Math.max(280, Math.min(680, screen.availHeight - 70)), Math.max(280, Math.ceil(head + fields.scrollHeight + foot + 24)));
+        getCurrentWindow().setSize(new LogicalSize(600, height)).catch(() => {});
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(fields);
+    observer.observe(root.querySelector(".capture-head")!);
+    resize();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
 
   // Adopt server-provided details as they arrive, unless the user edited them.
   useEffect(() => {
@@ -159,15 +206,15 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
   }, [c.browserRecommended, c.probeError, p]);
 
   return (
-    <div className="capture">
+    <div className="capture" ref={formRef}>
       <div className="capture-head">
         <div className="big-icon">
-          <FileIcon category={category} size={26} />
+          <Logo size={34} />
         </div>
         <div style={{ minWidth: 0 }}>
           <div className="title selectable">{title}</div>
           <div className="facts">
-            <span className="num">{c.probing && size == null ? <span className="skeleton" /> : size != null ? fmt.bytes(size) : needsUrl ? "" : "Size unknown"}</span>
+            <span className="num">{c.probing && size == null ? <span className="skeleton" /> : size != null ? `${p?.sizeEstimated ? "About " : ""}${fmt.bytes(size)}` : needsUrl ? "" : "Size unknown"}</span>
             {source && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <Globe size={13} />
@@ -180,6 +227,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
       </div>
 
       <div className="capture-body">
+        <div className="capture-fields" ref={fieldsRef}>
         {(c.kind === "manual" || c.probeError) && (
           <div className="field">
             <label htmlFor="url">Address</label>
@@ -205,6 +253,13 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
 
         {!needsUrl && (
           <>
+            {c.kind === "video" && !!p?.mediaOptions?.length && <div className="field">
+              <label htmlFor="quality">Download format and quality</label>
+              <Select id="quality" className="select" value={c.mediaFormat ?? "bv*+ba/b"}
+                onValueChange={(value) => { setNameTouched(false); setDirTouched(false); api.captureSetMediaFormat(c.key, value).catch((e) => setError(errorText(e))); }}>
+                {p.mediaOptions.map((option) => <option key={option.format} value={option.format}>{option.label} · {(option.container || "mkv").toUpperCase()}{option.size ? ` · About ${fmt.bytes(option.size)}` : ""}</option>)}
+              </Select>
+            </div>}
             <div className="field">
               <label htmlFor="name">File name</label>
               <input
@@ -218,13 +273,13 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
             <div className="field">
               <label htmlFor="dir">Save to</label>
               <div className="input-row">
-                <select className="select" value={category} onChange={(e) => onCategory(e.target.value)} aria-label="Category" style={{ width: 140 }}>
+                <Select className="select" value={category} onValueChange={onCategory} aria-label="Category" style={{ width: 140 }}>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <input id="dir" className="input" value={dir} onChange={(e) => (setDir(e.target.value), setDirTouched(true))} spellCheck={false} />
                 <button className="btn" onClick={browse} title="Choose a folder">
                   <Folder size={16} />
@@ -243,7 +298,6 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
               onClick={() => {
                 const next = !advanced;
                 setAdvanced(next);
-                getCurrentWindow().setSize(new LogicalSize(600, next ? 640 : 480)).catch(() => {});
               }}
               aria-expanded={advanced}
             >
@@ -254,14 +308,14 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
               <div className="grid-2">
                 <div className="field">
                   <label htmlFor="conns">Connections</label>
-                  <select id="conns" className="select" value={connections} onChange={(e) => setConnections(+e.target.value)}>
+                  <Select id="conns" className="select" value={connections} onValueChange={(value) => setConnections(+value)}>
                     {[1, 2, 4, 6, 8, 12, 16, 24, 32].map((n) => (
                       <option key={n} value={n}>
                         {n}
                         {n === settings.maxConnectionsPerDownload ? " (default)" : ""}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="field">
                   <label htmlFor="limit">Speed limit</label>
@@ -277,6 +331,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
           </>
         )}
         {error && <div className="error-box" style={{ marginTop: 0 }}>{error}</div>}
+        </div>
       </div>
 
       <div className="capture-foot">
@@ -297,11 +352,11 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
         </button>
         {!needsUrl && (
           <>
-            <button className="btn" disabled={busy} onClick={() => accept(false)} title="Start when the queue has a free slot">
+            <button className="btn" disabled={busy || c.probing || !!c.probeError || !p || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(false)} title="Start when the queue has a free slot">
               Add to queue
             </button>
-            <button ref={startRef} className={`btn ${preferBrowser ? "" : "primary"}`} disabled={busy} onClick={() => accept(true)}>
-              Start download
+            <button ref={startRef} className={`btn ${preferBrowser ? "" : "primary"}`} disabled={busy || c.probing || !!c.probeError || !p || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(true)}>
+              {c.probing ? "Checking…" : "Start download"}
             </button>
           </>
         )}

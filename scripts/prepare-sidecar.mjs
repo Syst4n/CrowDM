@@ -27,3 +27,4 @@ copyFileSync(built, join(outDir, `crowdm-host-${triple}${exe}`));
 console.log(`sidecar ready for ${triple}`);
 
 run("node", ["build.mjs"], join(root, "extensions"));
+if (process.platform === "win32") run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "prepare-media.ps1")]);

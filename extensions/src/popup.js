@@ -5,6 +5,7 @@ const noteEl = document.getElementById("note");
 
 function render(s) {
   if (!s) return;
+  globalThis.CrowDMTheme.apply(document.documentElement, s.settings);
   if (s.connected) {
     stateEl.textContent = "Connected to CrowDM";
     stateEl.className = "state ok";

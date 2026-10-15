@@ -18,7 +18,13 @@ const MAX_IN: usize = 64 * 1024 * 1024;
 const MAX_OUT: usize = 1024 * 1024;
 
 fn log(msg: &str) {
-    let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("CrowDM").join("logs")) else { return };
+    let Some(dir) = std::env::var_os("CROWDM_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("CrowDM")))
+        .map(|d| d.join("logs"))
+    else {
+        return;
+    };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("host.log");
     if std::fs::metadata(&path).map(|m| m.len() > 512 * 1024).unwrap_or(false) {

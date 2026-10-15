@@ -92,7 +92,7 @@ export function Details({ job: j, onRemove }: { job: JobSnapshot; onRemove: (ids
           <dt>Resume</dt>
           <dd>{j.resumable == null ? "Not checked yet" : j.resumable ? "Supported" : "Not supported by the server"}</dd>
           <dt>Added</dt>
-          <dd>{fmt.when(j.createdAt)}</dd>
+          <dd title={new Date(j.createdAt).toLocaleString()}>{fmt.when(j.createdAt)}</dd>
           {j.checksum && (
             <>
               <dt>Checksum</dt>

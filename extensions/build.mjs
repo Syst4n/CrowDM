@@ -18,10 +18,10 @@ const common = {
   version,
   description: "Sends your downloads to CrowDM, the download manager for Windows.",
   icons: { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" },
-  permissions: ["downloads", "nativeMessaging", "contextMenus", "cookies", "storage"],
+  permissions: ["downloads", "nativeMessaging", "contextMenus", "cookies", "storage", "webRequest", "webNavigation"],
   host_permissions: ["<all_urls>"],
   action: { default_title: "CrowDM", default_popup: "popup.html", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
-  content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["video.js"], all_frames: true, run_at: "document_idle" }],
+  content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["themes.js", "video.js"], all_frames: true, run_at: "document_idle" }],
 };
 
 const targets = {
@@ -43,6 +43,8 @@ for (const [name, manifest] of Object.entries(targets)) {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   cpSync(join(here, "src"), out, { recursive: true });
+  const palettes = JSON.parse(readFileSync(join(here, "../assets/themes.json"), "utf8"));
+  writeFileSync(join(out, "themes.js"), `globalThis.CROWDM_PALETTES = ${JSON.stringify(palettes)};\n` + readFileSync(join(here, "src/theme-runtime.js"), "utf8"));
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
   console.log("built", out);
 }

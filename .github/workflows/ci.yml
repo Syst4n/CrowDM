@@ -23,6 +23,8 @@ jobs:
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Prepare verified FFmpeg
+        run: ./scripts/prepare-ci-media.ps1
       - name: Build extensions and native host
         run: node scripts/prepare-sidecar.mjs
       - name: Frontend
@@ -33,4 +35,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets
       - name: Tests
-        run: cargo test --workspace
+        env:
+          CROWDM_MEDIA_TESTS: '1'
+        run: |
+          node --test extensions/tests/background.test.mjs
+          cargo test --workspace

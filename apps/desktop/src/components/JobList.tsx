@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowCircleDown, CheckCircle, Clock, DownloadSimple, PauseCircle, WarningCircle } from "@phosphor-icons/react";
+import { ArrowCircleDown, CheckCircle, Clock, DownloadSimple, FolderOpen, PauseCircle, WarningCircle } from "@phosphor-icons/react";
 import { api, errorText, type JobSnapshot } from "../lib/api";
 import { useStore, type SortKey } from "../lib/store";
 import * as fmt from "../lib/format";
-import { FileIcon } from "./FileIcon";
+import { FilePreview } from "./FilePreview";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 const ROW = 52;
@@ -103,7 +103,8 @@ export function JobList({ ids, onRemove }: { ids: string[]; onRemove: (ids: stri
         {head("progress", "Progress")}
         {head(null, "Speed")}
         {head(null, "Time left")}
-        {head("added", "Status")}
+        {head("status", "Status")}
+        <span />
       </div>
       <div className="list" ref={parentRef} tabIndex={0} onKeyDown={onKeyDown} role="listbox" aria-multiselectable>
         <div style={{ height: v.getTotalSize(), position: "relative" }}>
@@ -160,7 +161,8 @@ function Row({ id, top, selected, onClick, onContext }: {
 }) {
   const j = useStore((s) => s.jobs[id]);
   if (!j) return null;
-  const pct = fmt.percent(j.downloaded, j.size);
+  const progress = fmt.percent(j.downloaded, j.size);
+  const pct = j.mediaDownload && j.state !== "completed" && progress != null ? Math.min(99, progress) : progress;
   return (
     <div
       className={`row ${selected ? "selected" : ""}`}
@@ -172,7 +174,7 @@ function Row({ id, top, selected, onClick, onContext }: {
       aria-selected={selected}
     >
       <div className="file-icon">
-        <FileIcon category={j.category} />
+        <FilePreview job={j} />
       </div>
       <div className="name">
         <div className="title" title={j.fileName}>
@@ -180,11 +182,16 @@ function Row({ id, top, selected, onClick, onContext }: {
         </div>
         <div className="sub">{fmt.host(j.source.pageUrl ?? j.url)}</div>
       </div>
-      <div className="cell">{j.size != null ? fmt.bytes(j.size) : j.state === "completed" ? fmt.bytes(j.downloaded) : "Unknown"}</div>
+      <div className="cell">{j.size != null ? `${j.mediaDownload && j.state !== "completed" ? "≈ " : ""}${fmt.bytes(j.size)}` : j.state === "completed" ? fmt.bytes(j.downloaded) : "Unknown"}</div>
       <ProgressCell j={j} pct={pct} />
       <div className="cell">{j.state === "downloading" ? fmt.speed(j.speed) : ""}</div>
       <div className="cell">{j.state === "downloading" ? fmt.duration(j.eta) : ""}</div>
       <StatusCell j={j} />
+      <button className="icon-btn row-reveal" title="Open file location" aria-label={`Open file location for ${j.fileName}`}
+        onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); api.reveal(j.id).catch((err) => useStore.getState().showToast(errorText(err), "error")); }}>
+        <FolderOpen size={18} />
+      </button>
     </div>
   );
 }
@@ -229,7 +236,7 @@ function StatusCell({ j }: { j: JobSnapshot }) {
     completed: <CheckCircle size={15} />,
   }[j.state];
   return (
-    <div className={`status ${j.state}`} title={j.error?.message ?? ""}>
+    <div className={`status ${j.state}`} title={j.error?.message ?? statusText(j)}>
       {icon}
       <span className="cell" style={{ color: "inherit" }}>
         {statusText(j)}

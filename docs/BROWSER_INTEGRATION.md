@@ -73,6 +73,7 @@ opens it.
 | `contextMenus` | "Download with CrowDM" on links, images, audio and video. |
 | `storage` | Remember interception settings and the per-browser on/off switch. |
 | content script on http/https pages | The "Download video" button. |
+| `webRequest`, `webNavigation` | Observe HLS/DASH manifest responses, associate them with the correct frame and clear them on navigation. No request blocking. |
 
 Nothing is sent anywhere except to the local CrowDM app.
 
@@ -105,7 +106,7 @@ App to extension:
 {"type":"hello","replyTo":"1","appVersion":"0.1.0","protocol":1,"settings":{...}}
 {"type":"received","replyTo":"dl-7-3"}
 {"type":"decision","replyTo":"dl-7-3","decision":"takeOver"}
-{"type":"settings","settings":{"enabled":true,"excludedSites":[],"excludedExtensions":[],"minSize":0,"includePrivate":false,"videoButton":true}}
+{"type":"settings","settings":{"enabled":true,"excludedSites":[],"excludedExtensions":[],"minSize":0,"includePrivate":false,"videoButton":true,"skipWebPages":true}}
 {"type":"error","replyTo":null,"code":"appUnavailable","message":"..."}
 ```
 
@@ -128,14 +129,26 @@ or `cancel`.
 
 ## Video button
 
-`video.js` shows "Download video" over a `<video>` element when the pointer is
-over it, the element is at least 200 x 110 px, and its source is an
-`http(s)` URL (a plain file). Videos whose source is a `blob:` URL are assembled
-by the page from pieces (MediaSource streaming, as used by most streaming
-sites); they get no button, because they are not one downloadable file.
-DRM-protected media is never offered. The button lives in a closed shadow root
-inside a fixed-position element so it cannot change the page's layout or be
-styled by the page, and it follows the video into fullscreen.
+`video.js` shows "Download video" over loaded video players at least 200 x
+110 px. Direct sources go to the media extractor; YouTube uses its watch
+page so both audio and video are selected. Blob/MediaSource players use a
+single recently observed manifest in the matching tab and frame, or their
+player page when manifests are ambiguous. The app uses yt-dlp and FFmpeg,
+then finalizes the merged MKV through the normal download engine. A success
+notice is shown only after the app acknowledges the capture. Browser pause,
+site exclusions and private-session settings apply to video buttons too.
+
+The button uses a closed shadow root and follows fullscreen. DRM, active
+livestreams and unsupported extractors fail clearly instead of becoming
+HTML downloads. Ordinary browser HTML downloads remain in the browser by
+default; the engine also checks response types before writing any bytes.
+
+The overlay starts as a low-opacity icon, expands on hover/focus, and opens
+a quality menu on click. `videoOptions` requests travel through native
+messaging without creating a pending download. Only heights reported by
+the extractor are listed; audio-only and DRM formats are excluded. Selecting
+a quality adds `mediaFormat` to the capture. The app also exposes the same
+choices before confirmation, and persists the selector for queue/resume.
 
 ## Known limits
 

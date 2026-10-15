@@ -20,6 +20,22 @@ const KEEP_DIALOG: Duration = Duration::from_secs(10 * 60);
 
 static HIDE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+fn native_theme(mode: crowdm_engine::settings::ColorMode) -> Option<tauri::Theme> {
+    use crowdm_engine::settings::ColorMode;
+    match mode {
+        ColorMode::System => None,
+        ColorMode::Light => Some(tauri::Theme::Light),
+        ColorMode::Dark => Some(tauri::Theme::Dark),
+    }
+}
+pub fn apply_theme(app: &AppHandle) {
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        for window in app.webview_windows().values() {
+            let _ = window.set_theme(native_theme(state.engine.settings().effective_appearance().mode));
+        }
+    }
+}
+
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
@@ -27,7 +43,11 @@ pub fn show_main(app: &AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let built = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()));
+    if std::env::var_os("CROWDM_TEST_INSTANCE").is_some() {
+        builder = builder.data_directory(crate::platform::data_dir().join("webview"));
+    }
+    let built = builder
         .title("CrowDM")
         .inner_size(1180.0, 720.0)
         .min_inner_size(820.0, 520.0)
@@ -37,6 +57,7 @@ pub fn show_main(app: &AppHandle) {
     if let Err(e) = built {
         tracing::error!("could not create main window: {e}");
     }
+    apply_theme(app);
 }
 
 /// Returns the capture window, creating it (hidden) if needed, and whether
@@ -45,10 +66,14 @@ fn ensure_capture_inner(app: &AppHandle) -> Option<(tauri::WebviewWindow, bool)>
     if let Some(w) = app.get_webview_window(CAPTURE) {
         return Some((w, false));
     }
-    WebviewWindowBuilder::new(app, CAPTURE, WebviewUrl::App("index.html#capture".into()))
+    let mut builder = WebviewWindowBuilder::new(app, CAPTURE, WebviewUrl::App("index.html#capture".into()));
+    if std::env::var_os("CROWDM_TEST_INSTANCE").is_some() {
+        builder = builder.data_directory(crate::platform::data_dir().join("webview"));
+    }
+    builder
         .title("New download")
-        .inner_size(600.0, 480.0)
-        .min_inner_size(520.0, 420.0)
+        .inner_size(600.0, 320.0)
+        .min_inner_size(540.0, 270.0)
         .resizable(true)
         .maximizable(false)
         .minimizable(true)
@@ -58,7 +83,10 @@ fn ensure_capture_inner(app: &AppHandle) -> Option<(tauri::WebviewWindow, bool)>
         .build()
         .map_err(|e| tracing::error!("could not create capture window: {e}"))
         .ok()
-        .map(|w| (w, true))
+        .map(|w| {
+            apply_theme(app);
+            (w, true)
+        })
 }
 
 /// Pre-loads the capture dialog without showing it.
@@ -75,6 +103,9 @@ pub fn show_capture(app: &AppHandle) {
     // so the browser gets its acknowledgement immediately.
     tauri::async_runtime::spawn_blocking(move || {
         if let Some((w, created)) = ensure_capture_inner(&app) {
+            if app.try_state::<crate::state::AppState>().is_some_and(|s| s.captures.lock().is_empty()) {
+                return;
+            }
             if !created {
                 let _ = w.unminimize();
                 let _ = w.show();

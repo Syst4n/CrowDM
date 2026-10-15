@@ -1,6 +1,6 @@
 # Status and roadmap
 
-Last updated: 2026-09-28 (version 0.1.0, not yet released).
+Last updated: 2026-10-15 — 0.2.1 Nightwing preview.
 
 ## Working and tested
 
@@ -13,7 +13,20 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
   back, exclusions, duplicate clicks, cold start of the app, connection loss.
 - Browser hand-off with Firefox (headless, temporary add-on): dialog, take
   over (Firefox's copy cancelled), give back.
-- "Download this video" button for file-backed videos; context menu entry.
+- Video extraction for direct files, supported non-DRM HLS/DASH streams and
+  YouTube, with MP4/MKV output, MP3 conversion, automatic Audio folders,
+  finite-playlist checks, size estimates and completed-media verification.
+- YouTube SPA and playlist navigation regression checks; menus and captures
+  follow the current watch identity and reject stale selections.
+- Local previews for images, representative non-black video frames and
+  embedded audio artwork, with cache invalidation for older previews.
+- Nightwing branding, ten palettes with independent light/dark modes and Windows matching, a separate Appearance
+  section, contrast checks, optional animation and reduced-motion support.
+- Themed, keyboard-accessible dropdowns, motion preview, and category-folder
+  routing that refreshes pending capture dialogs when the root changes.
+- Compact popup with capture-event recovery; compact resizable details;
+  per-file folder buttons, sorting, older weekday/date/time, HTML exclusions
+  and Windows power-management settings.
 - Desktop app: download list with filters, categories and search; details
   with a live segment map; pause, resume, retry, download again, update the
   address of an expired link, per-download speed limit, remove (optionally to
@@ -22,14 +35,15 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
   behaviour; tray icon and menu; notifications; light and dark themes;
   keyboard shortcuts (Ctrl+N add, Ctrl+V paste a link, Delete, Space,
   Enter, Ctrl+A, arrows).
-- Per-user NSIS installer (about 4 MB) bundling the host and both extensions;
+- Per-user NSIS installer bundling the host, both extensions and video tools;
   uninstaller removes the registry entries.
+- Portable ZIP: extracted into a fresh directory; its marker selects adjacent
+  data storage, bundled tools resolve formats and produce an audio-only MP3.
 
 ## Built but not verified end to end
 
 - Real Chrome and Edge stable (verified with Chrome for Testing).
 - Schedule, sleep/shutdown after queue, start with Windows.
-- Portable mode (`portable` marker file next to `CrowDM.exe`).
 
 ## Next steps (proposed order)
 
@@ -40,8 +54,7 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
 3. Code-sign `CrowDM.exe`, `crowdm-host.exe` and the installer (SmartScreen
    warns on unsigned downloads).
 4. Auto-update (Tauri updater with GitHub Releases).
-5. HLS/DASH "video" downloads for unencrypted streams (m3u8 playlists),
-   clearly limited to content without DRM.
+5. Broaden real-site testing of video extraction and manifest association.
 6. Torrent and magnet support with `librqbit` (see DECISIONS.md #10):
    estimated as a full milestone: engine integration, file selection, seeding
    policy, and UI for peers and ratio.
@@ -59,14 +72,8 @@ Last updated: 2026-09-28 (version 0.1.0, not yet released).
 - If the destination folder is on a different drive, changing a paused
   download's folder restarts it from the beginning at the new location.
 
-## License (decision needed before a public release)
+## Application source license
 
-Recommendation: **GPL-3.0-or-later** if you want every redistributed or
-modified version of CrowDM to stay open source, or **MIT** (or MIT OR
-Apache-2.0, the Rust ecosystem's usual pair) if you want the widest reuse,
-including in closed products. All current dependencies (Tauri, React,
-reqwest, tokio, rusqlite/SQLite, Phosphor icons) allow either. For a free
-end-user app published on GitHub, GPL-3.0 is a common choice that protects the
-project from closed forks; MIT is simpler for contributors and companies.
-Until you choose, the repository has no license, which means all rights
-reserved.
+No application source license has been selected yet; all rights are reserved
+until one is added. Bundled tools and dependencies keep their own licenses.
+See THIRD_PARTY_NOTICES.md for notices and upstream source locations.
