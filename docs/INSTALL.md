@@ -4,7 +4,7 @@ CrowDM 0.2.1 is an early Windows preview for Windows 10/11, 64-bit.
 
 ## Get the app
 
-1. Open [CrowDM Releases](https://github.com/Syst4n/CrowDM/releases/latest).
+1. Open [CrowDM Releases](https://github.com/Syst4n/CrowDM/releases).
    For this preview, use the [0.2.1 release](https://github.com/Syst4n/CrowDM/releases/tag/v0.2.1).
 2. Download `CrowDM_0.2.1_x64-setup.exe`. Run it to install for your Windows
    user. Administrator rights are not required. WebView2 is installed if needed.
