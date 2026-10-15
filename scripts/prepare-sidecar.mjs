@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const release = process.argv.includes("--release");
-const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
+const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
 
 const triple = execFileSync("rustc", ["-vV"], { encoding: "utf8" })
   .split("\n")
@@ -27,4 +27,11 @@ copyFileSync(built, join(outDir, `crowdm-host-${triple}${exe}`));
 console.log(`sidecar ready for ${triple}`);
 
 run("node", ["build.mjs"], join(root, "extensions"));
-if (process.platform === "win32") run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "prepare-media.ps1")]);
+if (process.platform === "win32") {
+  // Prefer the runner's PowerShell 7. Launching Windows PowerShell from it
+  // can inherit a module path that hides built-in commands such as Get-FileHash.
+  let powershell = "pwsh.exe";
+  try { execFileSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", "exit 0"], { stdio: "ignore" }); }
+  catch { powershell = "powershell.exe"; }
+  run(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "prepare-media.ps1")]);
+}
