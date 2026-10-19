@@ -895,7 +895,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crowdm-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "crowdm-engine",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-engine"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -953,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-host"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "crowdm-ipc",
  "serde_json",
@@ -964,7 +964,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-ipc"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "crowdm-testserver"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "http-body",

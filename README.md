@@ -6,11 +6,13 @@ A Windows download manager with fast segmented transfers, native torrents,
 multipart download packages, browser capture and video downloads. Built for clear control over
 your files: pause, resume, queue, schedule, sort, and find them again.
 
-**[Download the 0.3.0 preview](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0)**
+**[Download the 0.3.1 preview](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.1)**
 · **[Installation and download guide](docs/INSTALL.md)**
 · **[Report an issue](https://github.com/Syst4n/CrowDM/issues)**
 
-![CrowDM with the Nightwing theme](docs/screenshots/main-nightwing.png)
+![CrowDM multipart download packages](docs/screenshots/packages.png)
+
+![Select links in your browser and send them together](docs/screenshots/selected-links.png)
 
 ## What CrowDM does well
 
@@ -63,7 +65,11 @@ requested download and cleared from completed jobs.
 
 ![Torrent file selection](docs/screenshots/torrent-confirmation.png)
 
-![Multipart package downloads](docs/screenshots/packages.png)
+![Batch download settings](docs/screenshots/batch-settings.png)
+
+![Updates and extension guidance](docs/screenshots/update-settings.png)
+
+![Torrent connection settings](docs/screenshots/torrent-settings.png)
 
 ![Appearance settings](docs/screenshots/appearance-nightwing.png)
 
@@ -73,7 +79,7 @@ Choose the same palette in either mode, or let Windows select light/dark.
 
 ## Install
 
-1. Download the x64 setup EXE from [Releases](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0)
+1. Download the x64 setup EXE from [Releases](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.1)
    and install it. Windows 10/11 is supported; installation is per user.
 2. Start CrowDM and open **Settings → Browsers → Open extension folder**.
 3. Chrome/Edge: enable Developer mode on the browser's extension page,
@@ -91,7 +97,7 @@ portable use and troubleshooting.
 
 ## Preview status
 
-0.3.0 is an early preview, released for testing and feedback. Installers are
+0.3.1 is an early preview, released for testing and feedback. Installers are
 unsigned, Firefox's extension is temporarily loaded, and installation of
 announced updates remains manual. DRM, active live broadcasts, form POST
 downloads and unsupported sites are excluded or handed back to the browser.
@@ -100,7 +106,7 @@ depend on the source; MP3 conversion does not improve source audio quality.
 
 After upgrading, reload the browser extension and refresh already-open video
 tabs once. Your history, settings, downloaded files and partial downloads
-are retained. See [status](docs/STATUS.md) and [release notes](docs/releases/v0.3.0.md).
+are retained. See [status](docs/STATUS.md) and [release notes](docs/releases/v0.3.1.md).
 
 Torrents support v1/hybrid metadata. Sharing stops on completion; v2-only
 torrents and completed-torrent seeding are not included. Link Grabber supports

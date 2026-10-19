@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import {
+  ArrowsClockwise,
   ArrowCircleDown,
   CheckCircle,
   Clock,
@@ -65,6 +66,7 @@ export function Sidebar() {
       <div className="nav-group">Categories</div>
       {categories.map((c) => item({ kind: "category", id: c.id }, c.name, <FileIcon category={c.id} />, counts.cat[c.id] ?? 0))}
       <div className="sidebar-foot">
+        <button className="nav-item" onClick={() => useStore.getState().openUpdates()}><ArrowsClockwise size={18}/><span>App updates</span></button>
         <button className={`nav-item ${view === "settings" ? "active" : ""}`} onClick={() => setView("settings")}>
           <GearSix size={18} />
           <span>Settings</span>

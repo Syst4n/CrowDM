@@ -229,6 +229,17 @@ pub fn reveal_job(state: State<AppState>, id: JobId) -> R<()> {
 }
 
 #[tauri::command]
+pub fn open_link_page(url: String) -> R<()> {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "Invalid page address.")?;
+    if !matches!(parsed.scheme(), "https" | "http") || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Only HTTP and HTTPS pages can be opened.".into());
+    }
+    #[cfg(windows)]
+    platform::open_web_page(parsed.as_str())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn open_folder(path: String) -> R<()> {
     #[cfg(windows)]
     platform::reveal_path(&PathBuf::from(path))?;

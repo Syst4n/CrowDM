@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "@phosphor-icons/react";
 import { api, errorText, type BrowserStatus, type Settings, type AppInfo } from "../lib/api";
-import { useStore } from "../lib/store";
+import { useStore, type SettingsSection } from "../lib/store";
 import * as fmt from "../lib/format";
 import { Logo } from "./Logo";
 import { Select } from "./Select";
@@ -15,7 +15,7 @@ import type { ColorMode, Palette } from "../lib/api";
 let saves: Promise<unknown> = Promise.resolve();
 let saveRevision = 0;
 
-type Section = "general" | "appearance" | "folders" | "connections" | "browsers" | "torrents" | "batch" | "updates" | "queue" | "about";
+type Section = SettingsSection;
 const SECTIONS: [Section, string][] = [
   ["general", "General"],
   ["appearance", "Appearance"],
@@ -32,7 +32,8 @@ const SECTIONS: [Section, string][] = [
 export function SettingsView() {
   const settings = useStore((s) => s.settings);
   const showToast = useStore((s) => s.showToast);
-  const [section, setSection] = useState<Section>("general");
+  const section = useStore(s => s.settingsSection);
+  const setSection = (settingsSection: Section) => useStore.setState({settingsSection});
 
   if (!settings) return null;
   const save = (patch: Partial<Settings>) => {

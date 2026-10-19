@@ -1,12 +1,12 @@
 # Download and install CrowDM
 
-CrowDM 0.3.0 is an early Windows preview for Windows 10/11, 64-bit.
+CrowDM 0.3.1 is an early Windows preview for Windows 10/11, 64-bit.
 
 ## Get the app
 
 1. Open [CrowDM Releases](https://github.com/Syst4n/CrowDM/releases).
-   For this preview, use the [0.3.0 release](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0).
-2. Download `CrowDM_0.3.0_x64-setup.exe`. Run it to install for your Windows
+   For this preview, use the [0.3.1 release](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.1).
+2. Download `CrowDM_0.3.1_x64-setup.exe`. Run it to install for your Windows
    user. Administrator rights are not required. WebView2 is installed if needed.
 3. Open CrowDM from the Start menu.
 
@@ -14,7 +14,7 @@ Preview builds are currently unsigned. Download from this repository and
 compare the SHA-256 hash with the release's `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\CrowDM_0.3.0_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CrowDM_0.3.1_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer includes video tools and the browser extensions. They are
@@ -178,3 +178,9 @@ after moving it to register its new browser connection path.
 
 Remove CrowDM through Windows **Settings → Apps**. Downloaded files are not
 deleted. Keep a copy of its database and download folders when backing up.
+
+### File-host verification
+
+If Link Grabber reports HTTP 403, use **Open in browser** to check the host’s verification or access requirements. A verification challenge cannot be completed by the background checker. Use the host’s actual download button; the browser extension can hand the resulting file request to CrowDM. Use **Retry unavailable** to recheck saved links. Some hosts require browser-only downloads.
+
+Open **App updates** at the bottom of the main sidebar, then **Check for updates**. This checks owner-announced updates; public preview builds can be newer.

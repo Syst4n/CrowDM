@@ -19,6 +19,8 @@ export const SORT_OPTIONS: [SortKey, string][] = [
   ["progress", "By progress"],
 ];
 
+export type SettingsSection = "general" | "appearance" | "folders" | "connections" | "browsers" | "torrents" | "batch" | "updates" | "queue" | "about";
+
 interface State {
   jobs: Record<string, JobSnapshot>;
   /** Bumped when membership, names or states change (re-sort/filter). */
@@ -31,6 +33,8 @@ interface State {
   selected: string[];
   lastClicked: string | null;
   view: "downloads" | "settings" | "grabber";
+  settingsSection: SettingsSection;
+  openUpdates(): void;
   grabbedCount: number;
   setGrabbedCount(n: number): void;
   toast: { text: string; tone: "info" | "error" } | null;
@@ -59,6 +63,8 @@ export const useStore = create<State>((set, get) => ({
   selected: [],
   lastClicked: null,
   view: "downloads",
+  settingsSection: "general",
+  openUpdates: () => set({view: "settings", settingsSection: "updates"}),
   grabbedCount: 0,
   setGrabbedCount: (grabbedCount) => set({grabbedCount}),
   toast: null,

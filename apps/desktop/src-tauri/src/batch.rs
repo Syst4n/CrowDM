@@ -192,15 +192,16 @@ pub fn analyze(state: AppState, text: String) -> Result<(), String> {
     Ok(())
 }
 async fn check(state: &AppState, l: &Link) -> Result<(String, ProbeInfo, Option<String>), String> {
-    let mut url = l.url.clone();
+    let mut url = if l.original_url.is_empty() { l.url.clone() } else { l.original_url.clone() };
     let mut refer = l.referrer.clone();
-    let mut p = state
+    let initial = state
         .engine
         .probe(ProbeRequest { url: url.clone(), file_name_hint: links::hint(&url), referrer: refer.clone(), ..Default::default() })
-        .await
-        .map_err(|_| "This link could not be checked. It may be offline or require a browser login.".to_string())?;
-    if p.looks_like_html {
-        if let Some(id) = p.probe_id {
+        .await;
+    let needs_page = initial.as_ref().map(|p| p.looks_like_html).unwrap_or(true);
+    let mut p = initial.ok();
+    if needs_page {
+        if let Some(id) = p.as_ref().and_then(|p| p.probe_id) {
             state.engine.discard_probe(id);
         }
         let (html, base) = links::fetch_page(&url).await?;
@@ -215,18 +216,26 @@ async fn check(state: &AppState, l: &Link) -> Result<(String, ProbeInfo, Option<
         }
         refer = Some(base);
         url = candidates[0].clone();
-        p = state
-            .engine
-            .probe(ProbeRequest { url: url.clone(), referrer: refer.clone(), file_name_hint: links::hint(&l.url), ..Default::default() })
-            .await
-            .map_err(|_| "The file behind this page could not be checked.".to_string())?;
-        if p.looks_like_html {
-            if let Some(id) = p.probe_id {
+        p = Some(
+            state
+                .engine
+                .probe(ProbeRequest {
+                    url: url.clone(),
+                    referrer: refer.clone(),
+                    file_name_hint: links::hint(&l.url),
+                    ..Default::default()
+                })
+                .await
+                .map_err(|_| "The file behind this page could not be checked. Open it in your browser to verify access.".to_string())?,
+        );
+        if p.as_ref().is_some_and(|p| p.looks_like_html) {
+            if let Some(id) = p.as_ref().and_then(|p| p.probe_id) {
                 state.engine.discard_probe(id);
             }
             return Err("The host still returned a web page. Open this link in your browser.".into());
         }
     }
+    let mut p = p.ok_or("The link could not be checked.")?;
     if let Some(id) = p.probe_id {
         state.engine.discard_probe(id);
     }

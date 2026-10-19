@@ -1,8 +1,10 @@
 # Status and roadmap
 
-Last updated: 2026-10-19 — 0.3.0 torrents and packages preview.
+Last updated: 2026-10-19 — 0.3.1 link checking and update access preview.
 
 ## Working and tested
+
+- Direct sidebar access to App updates, retrying saved unavailable links, browser-opening controls, and clear HTTP 403/404 host diagnostics. Range-rejecting HTML landing pages fall back to a normal bounded page check.
 
 - Native .torrent/magnet metadata, file selection, verified transfer, pause,
   corruption repair on resume, restart, held queues, single/multi-file output,

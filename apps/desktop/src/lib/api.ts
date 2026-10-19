@@ -253,6 +253,7 @@ export const api = {
   setQueued: (ids: string[], queued: boolean) => invoke<void>("set_queued", { ids, queued }),
   openFile: (id: string) => invoke<void>("open_job_file", { id }),
   reveal: (id: string) => invoke<void>("reveal_job", { id }),
+  openLinkPage: (url: string) => invoke<void>("open_link_page", {url}),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   pauseAll: () => invoke<void>("pause_all"),
   resumeAll: () => invoke<void>("resume_all"),
@@ -267,7 +268,7 @@ export const api = {
   memoryUsage: () => invoke<{ pid: number; name: string; privateBytes: number }[]>("memory_usage"),
 };
 
-export interface GrabbedLink { id: string; url: string; fileName: string; package: string; status: "checking"|"unchecked"|"ready"|"error"|"duplicate"; message: string|null; probe: ProbeInfo|null }
+export interface GrabbedLink { id: string; originalUrl?: string; url: string; fileName: string; package: string; status: "checking"|"unchecked"|"ready"|"error"|"duplicate"; message: string|null; probe: ProbeInfo|null }
 export interface LinkInbox { links: GrabbedLink[]; checking: boolean }
 export interface AnnouncedUpdate { version: string; whatsNew: string[]; installerUrl: string; sha256: string; extensionVersion: string }
 export interface DownloadCounts { total: number; versions: {version: string; downloads: number}[] }

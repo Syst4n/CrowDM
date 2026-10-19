@@ -84,7 +84,15 @@ pub async fn fetch_page(url: &str) -> Result<(String, String), String> {
     let client = crate::http::build_client(None).map_err(|_| "Could not create the link checker.")?;
     let mut r = client.get(url).timeout(std::time::Duration::from_secs(20)).send().await.map_err(|_| "The page could not be reached.")?;
     if !r.status().is_success() {
-        return Err(format!("Page returned HTTP {}.", r.status().as_u16()));
+        return Err(match r.status().as_u16() {
+            403 => "Host blocked the link checker (HTTP 403). Open in browser to check verification or access requirements. A verified direct file link may be needed.".into(),
+            404 | 410 => "The host reports that this link is unavailable (HTTP 404/410).".into(),
+            code => format!("Host returned HTTP {code}. Retry later or open in browser."),
+        });
+    }
+    let content_type = r.headers().get(reqwest::header::CONTENT_TYPE).and_then(|h| h.to_str().ok()).unwrap_or("");
+    if !content_type.contains("text/html") && !content_type.contains("application/xhtml") {
+        return Err("The server rejected the file check. Try its direct download in your browser.".into());
     }
     let final_url = r.url().to_string();
     let mut bytes = vec![];

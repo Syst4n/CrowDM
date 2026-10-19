@@ -231,6 +231,18 @@ mod imp {
         s.encode_wide().chain(Some(0)).collect()
     }
 
+    pub fn open_web_page(url: &str) -> Result<(), String> {
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let op = wide(std::ffi::OsStr::new("open"));
+        let uri = wide(std::ffi::OsStr::new(url));
+        let result =
+            unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), uri.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+        if result as isize <= 32 {
+            return Err("Windows could not open your browser.".into());
+        }
+        Ok(())
+    }
+
     /// Opens a file with its default program.
     pub fn open_path(path: &Path) -> Result<(), String> {
         use windows_sys::Win32::UI::Shell::ShellExecuteW;

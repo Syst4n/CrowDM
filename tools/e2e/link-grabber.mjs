@@ -10,7 +10,8 @@ const payload=Buffer.from(Array.from({length:512*1024},(_,i)=>i%251));
 const server=createServer((req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/links'){res.writeHead(200,{'Content-Type':'text/html'});return res.end('<a href="/files/Sample.part01.rar">1</a><a href="/files/Sample.part02.rar">2</a><a href="/about">About</a>');}
-  if(path==='/host/a'){res.writeHead(200,{'Content-Type':'text/html'});return res.end('<button onclick="window.open(\'/files/Sample.part01.rar\')">Download</button>');}
+  if(path==='/host/a'){if(req.headers.range){res.writeHead(416);return res.end();}res.writeHead(200,{'Content-Type':'text/html'});return res.end('<button onclick="window.open(\'/files/Sample.part01.rar\')">Download</button>');}
+  if(path==='/blocked'){res.writeHead(403,{'Content-Type':'text/html'});return res.end('<title>Just a moment...</title>');}
   if(path==='/login'){res.writeHead(200,{'Content-Type':'text/html'});return res.end('<html><body>Sign in</body></html>');}
   if(!path.startsWith('/files/')){res.writeHead(404);return res.end();}
   const match=req.headers.range?.match(/bytes=(\d+)-(\d*)/);const start=match?Number(match[1]):0,end=match?.[2]?Math.min(Number(match[2]),payload.length-1):payload.length-1;
@@ -30,6 +31,8 @@ try{
   check('duplicate clipboard lines are deduplicated',d.links.length===4);
   check('landing-page file resolver finds the real file',d.links.some(l=>l.status==='ready'&&l.url.endsWith('/files/Sample.part01.rar')));
   check('HTTP failure and HTML login pages remain unselected',d.links.filter(l=>l.status==='error').length===2);
+  await invoke('batch_analyze',{text:base+'/blocked'});d=await settled();const blocked=d.links.find(l=>l.url.endsWith('/blocked'));check('blocked host explains browser verification instead of offline error',blocked?.status==='error'&&blocked.message.includes('HTTP 403')&&blocked.message.includes('browser'));await main.getByRole('button',{name:'Retry unavailable',exact:true}).waitFor();check('failed links can be retried without pasting again',true);await invoke('batch_remove',{ids:[blocked.id]});d=await settled();
+  const rejected=await invoke('open_link_page',{url:'file:///C:/Windows/System32/calc.exe'}).then(()=>false,()=>true);check('browser helper rejects non-web addresses',rejected);
   check('related archive parts form one package',d.links.filter(l=>l.status==='ready').every(l=>l.package==='Sample'));
   check('checking starts no download or capture popup',(await invoke('list_jobs')).length===0&&(await invoke('capture_list')).length===0);
   // Source landing-page duplicates must remain duplicates after URL resolution.
@@ -45,13 +48,13 @@ try{
   check('all parts complete byte exactly',jobs.every(j=>j.state==='completed'&&readFileSync(join(j.dir,j.fileName)).equals(payload)));
   check('parts are kept together without extracting or combining',existsSync(join(out,'downloads','Sample','Sample.part01.rar'))&&existsSync(join(out,'downloads','Sample','Sample.part02.rar')));
   await main.getByRole('button',{name:'Packages (1)',exact:true}).click();if(!await main.getByRole('button',{name:'Pause package',exact:true}).isVisible())await main.locator('.package-card summary').first().click();check('package controls are available',await main.getByRole('button',{name:'Pause package',exact:true}).isVisible());
-  await main.screenshot({path:join(out,'packages.png')});
+  await delay(800);await main.screenshot({path:join(out,'packages.png')});
   await main.getByRole('button',{name:'Collected links (2)',exact:true}).click();await invoke('batch_remove',{ids:(await invoke('batch_list')).links.map(l=>l.id)});
   await main.getByLabel('Or collect links from a page',{exact:true}).fill(`${base}/links`);await main.getByRole('button',{name:'Collect links from page',exact:true}).click();d=await settled();check('page collector collects parts but skips navigation',d.links.length===2&&d.links.every(l=>l.status==='duplicate'));
   await main.getByRole('button',{name:'Settings',exact:true}).click();await main.getByRole('button',{name:'Batch downloads',exact:true}).click();check('quiet batch defaults and opt-in clipboard monitor',!(await invoke('get_settings')).batch.monitorClipboard&&(await invoke('get_settings')).batch.quietNotifications);
   await main.getByLabel('Simultaneous link checks',{exact:true}).fill('6');await main.getByRole('heading',{name:'Batch downloads',exact:true}).click();await delay(300);check('batch preferences persist',(await invoke('get_settings')).batch.checkConcurrency===6);
-  await main.screenshot({path:join(out,'batch-settings.png')});
-  await main.getByRole('button',{name:'Updates and downloads',exact:true}).click();check('update and extension guidance are present',await main.getByRole('button',{name:'Check for updates',exact:true}).isVisible()&&await main.getByRole('button',{name:'Open extension files',exact:true}).isVisible());
+  await delay(800);await main.screenshot({path:join(out,'batch-settings.png')});
+  await main.getByRole('button',{name:'All downloads',exact:false}).first().click();await main.getByRole('button',{name:'App updates',exact:true}).click();check('update and extension guidance are present',await main.getByRole('button',{name:'Check for updates',exact:true}).isVisible()&&await main.getByRole('button',{name:'Open extension files',exact:true}).isVisible());
   check('download counter distinguishes downloads from active users',(await main.textContent('section')).includes('Active users and installed-version counts are unavailable'));
-  await main.screenshot({path:join(out,'update-settings.png')});check('no renderer errors',errors.length===0);console.log(`ARTIFACTS ${out}`);
+  await delay(800);await main.screenshot({path:join(out,'update-settings.png')});check('no renderer errors',errors.length===0);console.log(`ARTIFACTS ${out}`);
 }finally{writeFileSync(join(out,'results.json'),JSON.stringify(results,null,2));if(browser)await browser.close().catch(()=>{});app?.kill();server.close();}

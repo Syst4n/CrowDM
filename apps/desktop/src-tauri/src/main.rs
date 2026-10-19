@@ -221,6 +221,7 @@ fn main() {
             commands::open_job_file,
             commands::reveal_job,
             commands::open_folder,
+            commands::open_link_page,
             commands::pause_all,
             commands::resume_all,
             commands::set_queue_running,

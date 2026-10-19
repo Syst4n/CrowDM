@@ -1,5 +1,11 @@
 # Testing
 
+## 0.3.1 focused regression (2026-10-20)
+
+23 isolated native-app checks passed: range-rejecting landing pages, HTTP 403 diagnostics, retry control availability, rejection of non-web browser targets, persisted link inbox, duplicate handling, byte-exact multipart downloads, held queues, package controls, settings and direct sidebar update navigation. Three Rust link-parser tests passed. Type checking and the optimized Windows app build passed. Screenshots were captured after entrance animations completed.
+
+A real failing host returned a Cloudflare verification page with HTTP 403 for both range and ordinary requests. Browser verification and unsupported host resolvers remain limitations; these tests do not establish universal file-host support.
+
 ## Automated suites
 
 Local update regression checks (2026-10-15):
