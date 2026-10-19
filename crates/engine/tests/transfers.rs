@@ -402,6 +402,10 @@ async fn huge_file_is_sparse_and_bounded() {
     }
     let mut nj = job(env.server.url(&format!("/file?size={size}&seed=77&etag=huge&name=huge.bin")));
     nj.max_connections = Some(8);
+    // On a nearly full disk the fixture shrinks to a few GiB. Keep the
+    // three-second sample mostly empty even on a fast loopback connection;
+    // downloaded bytes legitimately consume physical clusters.
+    nj.speed_limit = Some(8 * MIB);
     let id = env.engine.add(nj).unwrap();
     tokio::time::sleep(Duration::from_secs(3)).await;
     env.engine.pause(id).unwrap();

@@ -102,6 +102,7 @@ impl PendingCapture {
 }
 
 pub struct Inner {
+    pub batch: crate::batch::BatchState,
     pub app: AppHandle,
     pub engine: Engine,
     pub data_dir: PathBuf,
@@ -124,6 +125,7 @@ impl std::ops::Deref for AppState {
 impl AppState {
     pub fn new(app: AppHandle, engine: Engine, data_dir: PathBuf) -> Self {
         AppState(Arc::new(Inner {
+            batch: crate::batch::BatchState::load(&data_dir),
             app,
             engine,
             data_dir,

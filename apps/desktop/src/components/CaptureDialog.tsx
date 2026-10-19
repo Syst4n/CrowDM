@@ -85,6 +85,9 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
   const [checksum, setChecksum] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<number[] | null>(null);
+  const chosen = useMemo(() => new Set(selectedFiles ?? p?.torrent?.files.map((f) => f.index) ?? []), [selectedFiles, p?.torrent]);
+  useEffect(() => setSelectedFiles(null), [p?.torrent?.infoHash]);
   const startRef = useRef<HTMLButtonElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const fieldsRef = useRef<HTMLDivElement>(null);
@@ -159,6 +162,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
         maxConnections: connections !== settings.maxConnectionsPerDownload ? connections : undefined,
         speedLimit: rate || undefined,
         checksum: checksum.trim() || undefined,
+        onlyFiles: p?.torrent ? [...chosen] : undefined,
       });
     } catch (e) {
       setError(errorText(e));
@@ -167,8 +171,8 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
   };
 
   const checkUrl = () => {
-    if (!/^https?:\/\//i.test(url.trim())) {
-      setError("Enter an address that starts with http:// or https://");
+    if (!/^(https?:\/\/|magnet:|file:)/i.test(url.trim()) && !/^(?:[A-Za-z]:[\\/]|\\\\).*\.torrent$/i.test(url.trim())) {
+      setError("Enter an HTTP address, magnet link or the path to a .torrent file.");
       return;
     }
     setError(null);
@@ -189,11 +193,12 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
 
   // When CrowDM cannot get the real file, the browser's option leads.
   const preferBrowser = !!c.browserRecommended && c.browserWaiting;
-  const size = p?.size ?? c.size;
-  const source = fmt.host(c.pageUrl ?? c.finalUrl ?? c.url);
+  const size = p?.torrent ? p.torrent.files.filter((f) => chosen.has(f.index)).reduce((n,f) => n+f.size,0) : p?.size ?? c.size;
+  const source = p?.torrent ? `BitTorrent · ${p.torrent.private ? "Private tracker" : "DHT, trackers and peer exchange"}` : fmt.host(c.pageUrl ?? c.finalUrl ?? c.url);
   const browserName = c.browser ? BROWSER[c.browser] ?? c.browser : null;
-  const title = name || (needsUrl ? "Add a download" : "Checking the file");
+  const title = name || (needsUrl ? "Add a download" : /^magnet:/i.test(c.url) ? "Finding magnet metadata" : "Checking the file");
   const categories = settings.categories;
+  const localTorrent=!!p?.torrent && !/^(https?:\/\/|magnet:)/i.test(c.url);
 
   const notices = useMemo(() => {
     const out: { tone: "warn" | "info"; text: string }[] = [];
@@ -228,7 +233,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
 
       <div className="capture-body">
         <div className="capture-fields" ref={fieldsRef}>
-        {(c.kind === "manual" || c.probeError) && (
+        {(c.kind === "manual" && !localTorrent || c.probeError) && (
           <div className="field">
             <label htmlFor="url">Address</label>
             <div className="input-row">
@@ -236,7 +241,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
                 id="url"
                 className="input selectable"
                 value={url}
-                placeholder="https://example.com/file.zip"
+                placeholder="https://example.com/file.zip or magnet:?xt=…"
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && checkUrl()}
                 autoFocus={needsUrl}
@@ -270,10 +275,23 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
                 spellCheck={false}
               />
             </div>
+            {p?.torrent && <fieldset className="torrent-files">
+              <legend>Files to download ({chosen.size} of {p.torrent.files.length})</legend>
+              <div className="torrent-file-actions">
+                <button type="button" className="btn ghost" onClick={() => setSelectedFiles(null)}>Select all</button>
+                <button type="button" className="btn ghost" onClick={() => setSelectedFiles([])}>Select none</button>
+              </div>
+              <div className="torrent-file-list">
+                {p.torrent.files.map((file) => <label key={file.index} className="torrent-file">
+                  <input type="checkbox" checked={chosen.has(file.index)} onChange={(e) => setSelectedFiles(e.target.checked ? [...chosen,file.index] : [...chosen].filter((i) => i!==file.index))} />
+                  <span title={file.path}>{file.path}</span><small className="num">{fmt.bytes(file.size)}</small>
+                </label>)}
+              </div>
+            </fieldset>}
             <div className="field">
               <label htmlFor="dir">Save to</label>
               <div className="input-row">
-                <Select className="select" value={category} onValueChange={onCategory} aria-label="Category" style={{ width: 140 }}>
+                <Select className="select" value={category} disabled={!!p?.torrent} onValueChange={onCategory} aria-label="Category" style={{ width: 140 }}>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
@@ -306,7 +324,7 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
             </button>
             {advanced && (
               <div className="grid-2">
-                <div className="field">
+                {!p?.torrent && <div className="field">
                   <label htmlFor="conns">Connections</label>
                   <Select id="conns" className="select" value={connections} onValueChange={(value) => setConnections(+value)}>
                     {[1, 2, 4, 6, 8, 12, 16, 24, 32].map((n) => (
@@ -316,16 +334,16 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
                       </option>
                     ))}
                   </Select>
-                </div>
+                </div>}
                 <div className="field">
                   <label htmlFor="limit">Speed limit</label>
                   <input id="limit" className="input" value={limit} placeholder="No limit" onChange={(e) => setLimit(e.target.value)} />
                 </div>
-                <div className="field" style={{ gridColumn: "1 / -1" }}>
+                {!p?.torrent && <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label htmlFor="sum">Checksum (MD5, SHA-1 or SHA-256)</label>
                   <input id="sum" className="input selectable" value={checksum} placeholder="Optional" onChange={(e) => setChecksum(e.target.value)} spellCheck={false} />
                   <span className="hint">CrowDM verifies the finished file against it.</span>
-                </div>
+                </div>}
               </div>
             )}
           </>
@@ -352,10 +370,10 @@ function CaptureForm({ c, settings, waiting }: { c: CaptureView; settings: Setti
         </button>
         {!needsUrl && (
           <>
-            <button className="btn" disabled={busy || c.probing || !!c.probeError || !p || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(false)} title="Start when the queue has a free slot">
+            <button className="btn" disabled={busy || c.probing || !!c.probeError || !p || !!p.torrent && chosen.size===0 || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(false)} title="Start when the queue has a free slot">
               Add to queue
             </button>
-            <button ref={startRef} className={`btn ${preferBrowser ? "" : "primary"}`} disabled={busy || c.probing || !!c.probeError || !p || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(true)}>
+            <button ref={startRef} className={`btn ${preferBrowser ? "" : "primary"}`} disabled={busy || c.probing || !!c.probeError || !p || !!p.torrent && chosen.size===0 || p.looksLikeHtml && settings.interception.skipWebPages} onClick={() => accept(true)}>
               {c.probing ? "Checking…" : "Start download"}
             </button>
           </>

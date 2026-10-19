@@ -1,12 +1,12 @@
 # Download and install CrowDM
 
-CrowDM 0.2.1 is an early Windows preview for Windows 10/11, 64-bit.
+CrowDM 0.3.0 is an early Windows preview for Windows 10/11, 64-bit.
 
 ## Get the app
 
 1. Open [CrowDM Releases](https://github.com/Syst4n/CrowDM/releases).
-   For this preview, use the [0.2.1 release](https://github.com/Syst4n/CrowDM/releases/tag/v0.2.1).
-2. Download `CrowDM_0.2.1_x64-setup.exe`. Run it to install for your Windows
+   For this preview, use the [0.3.0 release](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0).
+2. Download `CrowDM_0.3.0_x64-setup.exe`. Run it to install for your Windows
    user. Administrator rights are not required. WebView2 is installed if needed.
 3. Open CrowDM from the Start menu.
 
@@ -14,7 +14,7 @@ Preview builds are currently unsigned. Download from this repository and
 compare the SHA-256 hash with the release's `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\CrowDM_0.2.1_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CrowDM_0.3.0_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer includes video tools and the browser extensions. They are
@@ -79,11 +79,77 @@ Firefox store release is planned.
 
 ## Update an existing installation
 
+In **Settings → Updates and downloads**, check for announced updates and read
+their version and “What's New.” Download verified installer saves a normal
+checksum-checked job; you choose when to pause transfers and open the installer.
+Development commits and unannounced previews do not generate update notices.
+The same screen explains extension updates and compares connected versions.
+
 Pause active downloads, close CrowDM, and run the newer installer. Download
 history, settings and partial files are retained. Then open the browser's
 extension page and click **Reload** on CrowDM. Refresh video tabs that were
 already open so they receive the updated content script. After that, moving
 between YouTube videos and playlist items does not require a page refresh.
+
+## Torrents and magnet links
+
+Use the magnet button beside Add URL to choose .torrent files, or paste a
+magnet link into Add URL. CrowDM resolves metadata, shows files and sizes,
+and lets you choose what to download before starting. Torrents use the
+Torrents category folder; you can change the destination in the dialog.
+
+The installer registers CrowDM for Windows Open with and MAGNET links.
+If another app is currently the default, choose CrowDM in the Windows chooser
+or use **Settings → Torrents → Choose defaults in Windows**. Registration
+never overrides another app's default without your choice. “Register with
+Windows” repairs the entries after a portable app is moved.
+
+Torrent settings include peer limit, incoming port (0 chooses automatically),
+UPnP port mapping, TCP/uTP and upload bandwidth. Restart after changing peers,
+port or transports. Public DHT, trackers and peer exchange aid discovery;
+private torrent rules are respected. No random public trackers are added.
+Downloads are uncapped by default. A healthy swarm, reachable incoming port,
+spare upstream capacity and fast storage determine actual speed. Each nonzero
+torrent bandwidth share must be at least 16 KiB/s. Peers can see your IP.
+Pieces are uploaded during downloading; sharing stops at completion.
+v1/hybrid torrents are supported; v2-only metadata and completed seeding are
+not included in this preview.
+
+## Link Grabber and multipart packages
+
+1. Open **Link Grabber**, paste a list of URLs or copied link text, then choose
+   **Analyze links**. Ctrl+V outside a text field routes multiple links here.
+   Or highlight links on a browser page, hover over the faint CrowDM icon
+   beside the selection and click **Collect links with CrowDM**. It opens the
+   app's Link Grabber with that batch. Hyperlinked labels work too. A selection
+   context-menu command provides another way to collect visible URL text.
+2. Or enter a page address and choose **Collect links from page**. Explicit
+   file links and simple host download targets are supported. Login/captcha
+   pages and unsupported host systems may still require your browser.
+3. Review availability and duplicates. Only ready files are selected. Related
+   names such as `Sample.part01.rar` / `Sample.part02.rar` share a package.
+4. Rename package folders, or give several groups the same name to combine
+   them. Choose a destination and **One folder per package**.
+5. **Add selected to queue** adds all selected parts with the usual queue
+   concurrency, retries, limits and schedule. If the queue is held, they wait.
+6. Open **Packages** for aggregate progress and package pause/resume/folder
+   controls. Each part is still visible in All downloads.
+
+The inbox is saved locally between runs. **Settings → Batch downloads** offers
+optional clipboard collection, duplicate skipping, package notification
+grouping, link-check concurrency and inbox limits. Clipboard monitoring is
+off initially and collects quietly; copying links never starts downloads.
+Only extracted links are saved. Checking them contacts their sites.
+Archive parts remain separate files in the package folder; automatic archive
+extraction, passwords and multipart assembly are not yet provided.
+
+The download counter under Updates and downloads shows public GitHub app asset
+downloads by version. It does not count unique people or active installations.
+No usage-reporting service is enabled.
+
+Windows notifications use CrowDM's name and Nightwing icon for installed,
+portable and local builds. Use **Settings → General → Test CrowDM notification**
+to check them. Windows notification permissions and Do Not Disturb still apply.
 
 ## Portable version
 

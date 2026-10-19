@@ -19,10 +19,16 @@ execFileSync(join(root, 'tools/media/ffmpeg.exe'), ['-hide_banner', '-loglevel',
 const video = readFileSync(join(out, 'video.mp4'));
 const file = Buffer.alloc(16384, 42);
 const server = createServer((req, res) => {
-  if (req.url === '/file.zip') { res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="Browser test.zip"', 'Content-Length': file.length }); return res.end(file); }
+  if (req.url.startsWith('/parts/')) {res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':file.length,'Content-Disposition':`attachment; filename="${req.url.split('/').at(-1)}"`});return res.end(file);}
+  if (req.url === '/file.zip') {
+    res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="Browser test.zip"', 'Content-Length': file.length });
+    // Give Chromium a realistic response window. An entire 16 KiB loopback
+    // response can finish before its asynchronous onCreated/pause callback.
+    res.write(file.subarray(0,512));setTimeout(()=>res.end(file.subarray(512)),350);return;
+  }
   if (req.url === '/video.mp4') { res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': video.length }); return res.end(video); }
-  res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end('<html><head><title>CrowDM browser preview</title></head><body style="margin:40px;background:#0d131c;color:#e3eaf3;font:16px Segoe UI"><h2>CrowDM · video downloads</h2><p><a href="/file.zip" download>Download test archive</a></p><video controls muted autoplay loop src="/video.mp4" style="width:640px;height:360px"></video></body></html>');
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end('<html><head><title>CrowDM browser preview</title></head><body style="margin:40px;background:#0d131c;color:#e3eaf3;font:16px Segoe UI"><h2>CrowDM · video downloads</h2><p><a href="/file.zip" download>Download test archive</a></p><video controls muted autoplay loop src="/video.mp4" style="width:640px;height:360px"></video><div id="parts"><p><a href="/parts/Sample.part01.rar">First part</a></p><p><a href="/parts/Sample.part02.rar">Second part</a></p></div></body></html>');
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = `http://127.0.0.1:${server.address().port}`;
@@ -48,10 +54,14 @@ try {
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--no-first-run'],
     acceptDownloads: true,
   });
+  const backgroundWorker = browser.serviceWorkers()[0] || await browser.waitForEvent('serviceworker');
+  await backgroundWorker.evaluate(async()=>{await ready;return true;});
   const page = browser.pages()[0]; await page.goto(url);
   await page.getByRole('link', { name: 'Download test archive' }).click();
   let popup;
   for (let i = 0; i < 150; i++) { popup = appContext.pages().find((p) => p.url().includes('#capture')); if (popup && (await invoke('capture_list')).some((c) => c.probe)) break; await delay(100); }
+  if(!(await invoke('capture_list')).length)console.log('ISOLATED extension state',await backgroundWorker.evaluate(()=>({state:status(),handled:handled.size,pending:pending.size})));
+  if(!(await invoke('capture_list')).length)console.log('ISOLATED browser download outcomes',await backgroundWorker.evaluate(async()=>(await chrome.downloads.search({})).map(j=>({state:j.state,error:j.error,bytes:j.bytesReceived}))));
   check('real browser link reaches CrowDM before completion', (await invoke('capture_list')).some((c) => c.kind === 'intercepted' && c.probe.fileName === 'Browser test.zip'));
   await popup.getByRole('button', { name: 'Start download', exact: true }).click();
   for (let i = 0; i < 100; i++) { if ((await invoke('list_jobs')).some((j) => j.state === 'completed')) break; await delay(100); }
@@ -77,6 +87,19 @@ try {
   await popup.getByRole('button', { name: 'Start download', exact: true }).click();
   for (let i = 0; i < 300; i++) { if ((await invoke('list_jobs')).some((j) => j.category === 'audio' && ['completed', 'failed'].includes(j.state))) break; await delay(100); }
   check('real browser video converts to completed MP3', (await invoke('list_jobs')).some((j) => j.category === 'audio' && j.state === 'completed' && j.fileName.endsWith('.mp3')));
+  await page.locator('#parts').scrollIntoViewIfNeeded();
+  await page.evaluate(()=>{const r=document.createRange();r.selectNodeContents(document.getElementById('parts'));const s=getSelection();s.removeAllRanges();s.addRange(r);});
+  const selection=page.locator('crowdm-selection-button');await selection.waitFor({state:'visible'});
+  check('selecting links alone does not create downloads',(await invoke('batch_list')).links.length===0&&(await invoke('list_jobs')).length===2);
+  await selection.hover();await delay(250);await page.screenshot({path:join(out,'selected-links.png')});await selection.click();
+  for(let i=0;i<150;i++){const d=await invoke('batch_list');if(d.links.length===2&&!d.checking)break;await delay(100);}
+  const draft=await invoke('batch_list');
+  check('real selection icon sends one batch through the native host',draft.links.length===2&&draft.links.every(l=>l.status==='ready'));
+  check('selected links open the app Link Grabber without capture popups',await main.getByRole('heading',{name:'Link Grabber',exact:true}).isVisible()&&(await invoke('capture_list')).length===0);
+  await main.getByRole('button',{name:'Add selected to queue',exact:true}).click();
+  for(let i=0;i<150;i++){if((await invoke('list_jobs')).filter(j=>j.package&&j.state==='completed').length===2)break;await delay(100);}
+  const parts=(await invoke('list_jobs')).filter(j=>j.package);
+  check('selected browser parts finish in one byte-exact package folder',parts.length===2&&parts.every(j=>j.state==='completed'&&j.package==='Sample'&&readFileSync(join(j.dir,j.fileName)).equals(file))&&parts[0].dir===parts[1].dir);
   console.log(`ARTIFACTS ${out}`);
 } finally {
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2));

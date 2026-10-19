@@ -17,7 +17,7 @@ pub const EVENT_CAPTURES: &str = "captures-changed";
 pub fn refresh_folders(state: &AppState, settings: &crowdm_engine::Settings) {
     for capture in state.captures.lock().iter_mut() {
         if let Some(info) = &mut capture.probe {
-            info.category = settings.category_for(&info.file_name);
+            info.category = if info.torrent.is_some() { "torrents".into() } else { settings.category_for(&info.file_name) };
             info.dir = settings.dir_for_category(&info.category);
             info.exists = info.dir.join(&info.file_name).exists();
         }
@@ -276,6 +276,7 @@ fn is_excluded(settings: &crowdm_engine::Settings, file_name: &str, size: Option
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptOptions {
+    pub only_files: Option<Vec<usize>>,
     pub file_name: Option<String>,
     pub dir: Option<String>,
     pub category: Option<String>,
@@ -295,6 +296,11 @@ fn new_job_for(c: &PendingCapture, o: AcceptOptions) -> NewJob {
         .filter(|s| !s.is_empty())
         .and_then(|h| crowdm_engine::checksum::guess_algo(h).map(|algo| Checksum { algo, expected: h.to_ascii_lowercase() }));
     NewJob {
+        package: None,
+        torrent: c.probe.as_ref().and_then(|p| p.torrent.clone()).map(|mut t| {
+            t.only_files = o.only_files;
+            t
+        }),
         media_download: cap.kind == CaptureKind::Video,
         media_format: cap.media_format.clone(),
         url: cap.final_url.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| cap.url.clone()),

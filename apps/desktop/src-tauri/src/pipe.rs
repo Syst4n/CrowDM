@@ -105,6 +105,27 @@ fn on_message(state: &AppState, conn: u64, msg: FromBrowser) {
             captures::on_capture(state, conn, id, browser, capture);
         }
         FromBrowser::CaptureGone { id } => captures::capture_gone(state, conn, &id),
+        FromBrowser::BatchLinks { id, text, incognito } => {
+            let settings = state.engine.settings();
+            if !settings.interception.enabled || incognito && !settings.interception.include_private {
+                state.send(
+                    conn,
+                    &ToBrowser::Error {
+                        reply_to: Some(id),
+                        code: "batchDisabled".into(),
+                        message: "Link collection is disabled for this browser session.".into(),
+                    },
+                );
+                return;
+            }
+            match crate::batch::analyze(state.clone(), text) {
+                Ok(()) => {
+                    crate::batch::open(state);
+                    state.send(conn, &ToBrowser::Received { reply_to: id });
+                }
+                Err(e) => state.send(conn, &ToBrowser::Error { reply_to: Some(id), code: "batchLinks".into(), message: e }),
+            }
+        }
         FromBrowser::VideoOptions { id, capture } => {
             let state = state.clone();
             tauri::async_runtime::spawn(async move {

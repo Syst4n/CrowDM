@@ -27,7 +27,9 @@ sha2 = "0.10"
 md-5 = "0.10"
 sha1 = "0.10"
 hex = "0.4"
+regex = "1"
 httpdate = "1"
+librqbit = { version = "=9.0.1", default-features = false, features = ["default-tls"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [target.'cfg(windows)'.dependencies]

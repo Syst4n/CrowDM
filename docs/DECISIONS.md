@@ -95,13 +95,28 @@ The dialog is created for the first capture and kept for 10 minutes, the main
 window is destroyed when closed to the tray. A setting keeps the dialog loaded
 permanently.
 
-## 10. Torrents and FTP deferred
+## 10. Native torrents; FTP remains deferred
 
-See STATUS.md. HTTP(S) capture and transfer quality came first. `librqbit`
-(Rust, MIT/Apache) is the likely torrent engine; it adds DHT, peer
-connections, piece storage and a separate UI model (seeding, ratio, file
-selection), which is a milestone of its own. FTP is rare on today's web;
-SFTP needs key management UI. Both are deferred until HTTP is polished.
+0.3.0 integrates librqbit 9.0.1 (Apache-2.0) into the engine, without its
+independent HTTP control server or job persistence. CrowDM owns metadata,
+file selection, queue state and private UUID staging directories. Pieces are
+checked on resume; storage is closed before collision-safe finalization.
+Completed torrents stop sharing. Public trackers are never injected into
+private torrents. Windows handlers advertise availability while preserving
+the user's chosen default. FTP/FTPS and SFTP remain future work.
+
+## 12. Packages and announcements
+
+Link Grabber persists a bounded local inbox, checks links with bounded
+concurrency and resolves explicit targets without executing page scripts.
+HTTP parts remain ordinary jobs with a shared package name/destination, so
+existing retry, schedule, resume and integrity behavior is reused. Automatic
+extraction and account/captcha systems are outside the first implementation.
+
+App announcements use an owner-controlled manifest, not GitHub's newest
+commit or newest release. Only an explicit owner request to send an update
+should change that manifest. Installation stays user initiated. Public asset
+download counts are presented honestly; no active-user telemetry is added.
 
 ## 11. No license chosen yet
 

@@ -2,19 +2,21 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod batch;
 mod captures;
 mod commands;
+mod notifications;
 mod pipe;
 mod platform;
 mod previews;
 mod state;
 mod tray;
+mod updates;
 mod windows;
 
 use crowdm_engine::settings::AfterQueue;
 use crowdm_engine::{Engine, EngineEvent, JobState};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::state::AppState;
 
@@ -26,13 +28,17 @@ fn init_logging(data_dir: &std::path::Path) {
         let _ = std::fs::rename(&path, dir.join("app.old.log"));
     }
     let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else { return };
-    let filter = tracing_subscriber::EnvFilter::try_from_env("CROWDM_LOG").unwrap_or_else(|_| "info".into());
+    // Tracker URLs may contain private passkeys. Keep upstream peer/tracker
+    // diagnostics out of ordinary logs; deliberate diagnostic overrides remain.
+    let filter = tracing_subscriber::EnvFilter::try_from_env("CROWDM_LOG")
+        .unwrap_or_else(|_| "info,librqbit=off,librqbit_tracker_comms=off,librqbit_dht=off,librqbit_upnp=off,librqbit_lsd=off".into());
     let _ = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).with_writer(std::sync::Mutex::new(file)).try_init();
 }
 
 /// Acts on command-line arguments (from this launch or a second instance).
 pub fn handle_args(state: &AppState, args: &[String], from_other_instance: bool) {
-    let urls: Vec<&String> = args.iter().filter(|a| a.starts_with("http://") || a.starts_with("https://")).collect();
+    let urls: Vec<&String> =
+        args.iter().filter(|a| a.starts_with("http://") || a.starts_with("https://") || crowdm_engine::torrent::is_input(a)).collect();
     for u in &urls {
         captures::add_manual(state, Some((*u).clone()));
     }
@@ -79,13 +85,28 @@ fn forward_engine_events(state: AppState) {
                 }
                 EngineEvent::JobCompleted { job } => {
                     let s = state.engine.settings();
-                    if s.notify_on_complete {
-                        let _ = app.notification().builder().title("Download complete").body(&job.job.file_name).show();
+                    if s.batch.quiet_notifications && job.job.package.is_some() {
+                        if s.notify_on_complete {
+                            if let Some((title, body)) = batch::package_notification(&state, job) {
+                                notifications::show(&state, title, body);
+                            }
+                        }
+                    } else if s.notify_on_complete {
+                        notifications::show(&state, "Download complete", &job.job.file_name);
                     }
                 }
                 EngineEvent::JobFailed { job } => {
+                    if state.engine.settings().batch.quiet_notifications && job.job.package.is_some() {
+                        if let Some((title, body)) = batch::package_notification(&state, job) {
+                            notifications::show(&state, title, body);
+                        }
+                        if app.get_webview_window(windows::MAIN).is_some() {
+                            let _ = app.emit_to(windows::MAIN, "engine", &ev);
+                        }
+                        continue;
+                    }
                     let msg = job.job.error.as_ref().map(|e| e.message.clone()).unwrap_or_default();
-                    let _ = app.notification().builder().title(format!("Download failed: {}", job.job.file_name)).body(msg).show();
+                    notifications::show(&state, format!("Download failed: {}", job.job.file_name), msg);
                 }
                 EngineEvent::QueueFinished => after_queue(&state),
                 _ => {}
@@ -107,7 +128,7 @@ fn after_queue(state: &AppState) {
     let action = state.engine.settings().after_queue;
     let app = &state.app;
     let note = |body: &str| {
-        let _ = app.notification().builder().title("Queue finished").body(body).show();
+        notifications::show(state, "Queue finished", body);
     };
     match action {
         AfterQueue::Nothing => {}
@@ -132,6 +153,13 @@ fn after_queue(state: &AppState) {
 }
 
 fn main() {
+    #[cfg(windows)]
+    if std::env::args().any(|arg| arg == "--register-torrent-handlers") {
+        if platform::register_torrent_handlers().and_then(|_| platform::register_notification_identity(&platform::data_dir())).is_err() {
+            std::process::exit(1);
+        }
+        return;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let data_dir = platform::data_dir();
 
@@ -157,6 +185,18 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::test_notification,
+            batch::batch_list,
+            batch::batch_take_focus,
+            batch::batch_analyze,
+            batch::batch_collect_page,
+            batch::batch_stop,
+            batch::batch_remove,
+            batch::batch_accept,
+            updates::check_update,
+            updates::download_update,
+            updates::install_update,
+            updates::download_counts,
             commands::list_jobs,
             previews::job_thumbnail,
             commands::get_settings,
@@ -189,6 +229,8 @@ fn main() {
             commands::open_extensions_folder,
             commands::open_data_folder,
             commands::memory_usage,
+            commands::register_torrent_handlers,
+            commands::choose_torrent_defaults,
         ])
         .setup(move |app| {
             let engine = tauri::async_runtime::block_on(async { Engine::open(&data_dir.join("crowdm.sqlite")) })
@@ -202,9 +244,16 @@ fn main() {
                 if let Err(e) = platform::register_browsers(&data_dir) {
                     tracing::warn!("browser registration failed: {e}");
                 }
+                if let Err(e) = platform::register_notification_identity(&data_dir) {
+                    tracing::warn!("notification registration failed: {e}");
+                }
+                if let Err(e) = platform::register_torrent_handlers() {
+                    tracing::warn!("torrent registration failed: {e}");
+                }
             }
             tray::create(app)?;
             forward_engine_events(state.clone());
+            batch::start_clipboard_monitor(state.clone());
             #[cfg(windows)]
             platform::start_power_management(state.clone());
             let settings = state.engine.settings();

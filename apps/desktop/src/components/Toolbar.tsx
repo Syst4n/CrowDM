@@ -1,4 +1,5 @@
-import { FolderOpen, HandPalm, MagnifyingGlass, Pause, Play, Plus, Queue, Trash } from "@phosphor-icons/react";
+import { FolderOpen, HandPalm, MagnifyingGlass, Pause, Play, Plus, Queue, Trash, MagnetStraight } from "@phosphor-icons/react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "../lib/api";
 import { SORT_OPTIONS, useStore, type SortKey } from "../lib/store";
 import { Select } from "./Select";
@@ -24,6 +25,11 @@ export function Toolbar({ onRemove }: { onRemove: (ids: string[]) => void }) {
         <Plus size={16} weight="bold" />
         Add URL
       </button>
+      <button className="icon-btn" title="Open .torrent file" aria-label="Open .torrent file" onClick={() => {
+        void openDialog({multiple:true,filters:[{name:"BitTorrent",extensions:["torrent"]}]}).then(async (paths) => {
+          for (const path of paths ? Array.isArray(paths) ? paths : [paths] : []) await api.captureNew(path);
+        }).catch((e) => showToast(errorText(e),"error"));
+      }}><MagnetStraight size={19}/></button>
       <div className="divider" />
       <button className="icon-btn" disabled={!canResume} onClick={() => run(api.resume(selected))} title="Resume">
         <Play size={18} />

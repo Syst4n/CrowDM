@@ -1,9 +1,20 @@
 # Status and roadmap
 
-Last updated: 2026-10-15 — 0.2.1 Nightwing preview.
+Last updated: 2026-10-19 — 0.3.0 torrents and packages preview.
 
 ## Working and tested
 
+- Native .torrent/magnet metadata, file selection, verified transfer, pause,
+  corruption repair on resume, restart, held queues, single/multi-file output,
+  collision protection and staging cleanup. Local TCP and uTP-only swarms.
+- Windows handler registration for files and magnets, preserving other
+  defaults. Startup arguments are handled on cold and warm launches.
+- Link Grabber parsing/deduplication, safe multipart package names and bounded
+  explicit download-target parsing. Saved review inbox, batch queue jobs,
+  package controls, optional clipboard collection and grouped notifications.
+- Owner-controlled update announcements, plain-text release notes, verified
+  installer jobs and extension guidance. Public download counts by version;
+  active users/installations are not tracked. See UPDATES.md.
 - Segmented HTTP/HTTPS engine: range validation, If-Range, ignored-range
   fallback, redirects, unknown lengths, interruptions, stalled connections,
   servers that limit connections (learned per host), speed limits, checksums,
@@ -53,15 +64,14 @@ Last updated: 2026-10-15 — 0.2.1 Nightwing preview.
    manifest's `allowed_origins`).
 3. Code-sign `CrowDM.exe`, `crowdm-host.exe` and the installer (SmartScreen
    warns on unsigned downloads).
-4. Auto-update (Tauri updater with GitHub Releases).
+4. Code-signed unattended updates, if desired; current announcements and
+   installer downloads are owner controlled and installation is manual.
 5. Broaden real-site testing of video extraction and manifest association.
-6. Torrent and magnet support with `librqbit` (see DECISIONS.md #10):
-   estimated as a full milestone: engine integration, file selection, seeding
-   policy, and UI for peers and ratio.
+6. Broaden external torrent/router testing, v2-only support and optional
+   completed-torrent seeding/ratio controls.
 7. FTP/FTPS; SFTP after that.
 8. Per-site credentials (HTTP basic auth prompt) and proxy settings UI.
-9. Import from the browser's clipboard monitor ("download links in
-   clipboard"), batch URL lists.
+9. Broaden Link Grabber host support; optional multipart archive extraction.
 10. Localization (UI strings are in English only).
 
 ## Known issues

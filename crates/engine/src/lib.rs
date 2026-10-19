@@ -11,12 +11,14 @@ mod engine;
 pub mod error;
 pub mod file;
 pub mod http;
+pub mod links;
 pub mod media;
 pub mod model;
 pub mod names;
 pub mod ratelimit;
 pub mod settings;
 pub mod store;
+pub mod torrent;
 pub mod transfer;
 
 pub use engine::{Engine, EngineEvent, JobPatch, ProbeRequest};

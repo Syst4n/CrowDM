@@ -103,6 +103,12 @@ All run against `crates/testserver`, which generates file content from
 
 ## What has not been tested
 
+- Real public torrent swarms, router-specific UPnP behavior and peak Internet
+  torrent throughput. The 0.3 tests use generated local TCP/uTP swarms and a
+  local tracker with all public discovery disabled.
+- A future announced update installed through the in-app update screen.
+  Announcement validation and the download integrity mechanism are checked;
+  there is intentionally no live announcement during preview development.
 - Real Google Chrome and Microsoft Edge with the extension loaded unpacked
   (Chrome for Testing was used; stable Chrome no longer accepts
   `--load-extension`, so automating it needs a different approach).
@@ -114,3 +120,41 @@ All run against `crates/testserver`, which generates file content from
   100 GiB test covers allocation and offsets, not a full 100 GiB transfer).
 - The installer on a clean Windows 10 machine (tested only as a silent
   per-user install on the development machine).
+
+## 0.3 torrents, packages and update checks
+
+- 56 Rust tests, including existing real-media and large sparse-file
+  coverage. New native tests resolve real local magnet metadata, select files,
+  transfer over TCP and uTP alone, pause, corrupt saved pieces, reopen, verify
+  and repair them, hold/release a queue, protect collisions, clean staging and
+  save both single-file and multi-file torrents. Unsafe Windows paths and
+  invalid file selections are rejected. Registration uses a disposable HKCU
+  test subtree and checks that an existing other default is preserved.
+  The sparse fixture is up to 100 GiB, bounded by available disk space, and
+  uses a limited transfer rate so downloaded bytes do not invalidate its
+  allocated-space assertion on fast local networks.
+- 18 native torrent UI checks in `tools/e2e/torrents.mjs`: cold file opening
+  with spaces, warm magnet activation, selected bytes, real transfer output,
+  queue behavior, settings persistence and small-window fit.
+- 20 native Link Grabber checks in `tools/e2e/link-grabber.mjs`: mixed paste,
+  deduplication before/after host resolution, offline/login errors, packages,
+  no captures/transfers while checking, saved inbox after restart, held queue,
+  exact output bytes, page collection and update/extension/counter guidance.
+- Existing 96 native appearance/dialog/preview/routing checks, eight extension
+  background checks and real Chromium/native-host checks passed against
+  the 0.3 preview. Generated local files are used instead of private downloads.
+- 14 selection-overlay checks cover alignment to selected text, faint/expanded
+  appearance, one-click batches, linked labels, preserved selection, theme
+  switching, private/input exclusions and stale-navigation hiding. Real browser
+  native-host coverage includes selecting links, opening Link Grabber and
+  completing both package parts. Transient Windows file-lock finalization has
+  its own regression test. Notification identity registration is tested in a
+  disposable registry subtree; app identity matches the installer identifier.
+- Clipboard monitoring is off by default; opt-in persistence/polling code is
+  checked, but tests do not overwrite the user's Windows clipboard.
+
+Run the native UI scripts after building the release app and the
+`torrent_seed` example. They use separate data folders and single-instance
+names. Set `CROWDM_PLAYWRIGHT` to a Playwright Core module location;
+`CROWDM_CHROMIUM` selects the isolated Chrome for Testing executable for the
+browser suite. Do not point tests at the installed user's database.

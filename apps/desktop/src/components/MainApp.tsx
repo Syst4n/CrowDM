@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api, errorText } from "../lib/api";
+import { api, errorText, onGrabberRequested } from "../lib/api";
 import { matchesFilter, sortJobs, startEngineSync, useStore } from "../lib/store";
 import { useTheme } from "../lib/theme";
 import { Sidebar } from "./Sidebar";
@@ -10,6 +10,8 @@ import { Details } from "./Details";
 import { StatusBar } from "./StatusBar";
 import { SettingsView } from "./SettingsView";
 import { RemoveDialog } from "./RemoveDialog";
+import { LinkGrabber } from "./LinkGrabber";
+import { UpdateNotice } from "./UpdatesView";
 
 export function MainApp() {
   const load = useStore((s) => s.load);
@@ -18,6 +20,17 @@ export function MainApp() {
   const toast = useStore((s) => s.toast);
   const [removing, setRemoving] = useState<string[] | null>(null);
   useTheme(settings);
+  useEffect(() => {
+    let alive=true;let unlisten:(()=>void)|undefined;
+    void onGrabberRequested(()=>{void api.batchTakeFocus().then(()=>useStore.getState().setView("grabber"));}).then(u=>{if(alive)unlisten=u;else u();});
+    return()=>{alive=false;unlisten?.();};
+  },[]);
+  useEffect(() => {
+    let alive = true;
+    const poll = () => api.batchList().then((v) => {if (alive) useStore.getState().setGrabbedCount(v.links.length);}).catch(() => {});
+    void poll(); const timer = window.setInterval(poll, 2000);
+    return () => {alive = false; window.clearInterval(timer);};
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -25,6 +38,7 @@ export function MainApp() {
     load()
       .catch((e) => useStore.getState().showToast(errorText(e), "error"))
       .finally(() => {
+        void api.batchTakeFocus().then(focus=>{if(focus)useStore.getState().setView("grabber");}).catch(()=>{});
         // Show the window only after the first paint to avoid a white flash.
         requestAnimationFrame(() => getCurrentWindow().show());
       });
@@ -45,7 +59,12 @@ export function MainApp() {
           .readText()
           .then((t) => {
             const url = t.trim();
-            if (/^https?:\/\//i.test(url)) api.captureNew(url);
+            if (/https?:\/\/|magnet:/i.test(url)) {
+              if ((url.match(/https?:\/\/|magnet:/gi)?.length ?? 0) > 1 || url.includes("\n") || url.includes("<a ")) {
+                useStore.getState().setView("grabber");
+                void api.batchAnalyze(url).catch((e) => useStore.getState().showToast(errorText(e), "error"));
+              } else void api.captureNew(url);
+            }
           })
           .catch(() => {});
       } else if (e.key === "Delete") {
@@ -61,9 +80,10 @@ export function MainApp() {
     <div className="app">
       <Sidebar />
       <div className="main">
+        <UpdateNotice />
         {view === "settings" ? (
           <SettingsView />
-        ) : (
+        ) : view === "grabber" ? <LinkGrabber /> : (
           <>
             <Toolbar onRemove={(ids) => setRemoving(ids)} />
             <Downloads onRemove={(ids) => setRemoving(ids)} />

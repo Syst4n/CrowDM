@@ -1,7 +1,8 @@
 name: Release
 
 # Builds the installer, a portable zip and the extension folders when a tag
-# like v0.2.1 is pushed, and attaches them to a preview GitHub release.
+# like v0.3.0 is pushed, and attaches them to a preview GitHub release.
+# This never changes the installed-user announcement feed in updates/.
 on:
   push:
     tags: ["v*"]

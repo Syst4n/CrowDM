@@ -137,6 +137,25 @@ pub fn show_main_window(app: tauri::AppHandle) {
 // ----- job actions ------------------------------------------------------
 
 #[tauri::command]
+pub fn register_torrent_handlers() -> R<()> {
+    #[cfg(windows)]
+    platform::register_torrent_handlers().map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn test_notification(state: State<AppState>) {
+    crate::notifications::show(&state, "CrowDM notification test", "Download notifications appear under CrowDM with its own logo.");
+}
+
+#[tauri::command]
+pub fn choose_torrent_defaults() -> R<()> {
+    #[cfg(windows)]
+    platform::choose_torrent_defaults()?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn pause_jobs(state: State<AppState>, ids: Vec<JobId>) {
     for id in ids {
         let _ = state.engine.pause(id);
@@ -191,6 +210,10 @@ pub fn reorder_job(state: State<AppState>, id: JobId, before: Option<JobId>) -> 
 #[tauri::command]
 pub fn open_job_file(state: State<AppState>, id: JobId) -> R<()> {
     let snap = state.engine.job(id).ok_or("Download not found.")?;
+    if snap.job.torrent.is_none() && snap.job.target_path().extension().is_some_and(|e| e.eq_ignore_ascii_case("torrent")) {
+        captures::add_manual(&state, Some(snap.job.target_path().to_string_lossy().into_owned()));
+        return Ok(());
+    }
     #[cfg(windows)]
     platform::open_path(&snap.job.target_path())?;
     Ok(())

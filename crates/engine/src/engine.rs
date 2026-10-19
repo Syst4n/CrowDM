@@ -120,6 +120,8 @@ struct PendingProbe {
 }
 
 struct Inner {
+    torrents: tokio::sync::OnceCell<Arc<librqbit::Session>>,
+    torrent_peers: Mutex<HashMap<String, Vec<std::net::SocketAddr>>>,
     /// Runtime the engine was opened on; used so API calls work from any
     /// thread (e.g. the UI thread), not only from inside the runtime.
     rt: tokio::runtime::Handle,
@@ -167,6 +169,8 @@ impl Engine {
         let (events, _) = broadcast::channel(1024);
         let permits = settings.max_total_connections as usize;
         let inner = Arc::new(Inner {
+            torrents: tokio::sync::OnceCell::new(),
+            torrent_peers: Mutex::new(HashMap::new()),
             rt: tokio::runtime::Handle::current(),
             store,
             jobs: Mutex::new(HashMap::new()),
@@ -313,6 +317,74 @@ impl Engine {
 
     // ----- probing -------------------------------------------------------
 
+    /// Supply a custom session before using torrents (also enables completely
+    /// isolated loopback swarms in integration tests).
+    pub fn use_torrent_session(&self, session: Arc<librqbit::Session>) -> Result<()> {
+        self.inner.torrents.set(session).map_err(|_| EngineError::Invalid("Torrent session is already initialized.".into()))
+    }
+
+    async fn torrent_session(&self) -> Result<Arc<librqbit::Session>> {
+        Ok(self.inner.torrents.get_or_try_init(|| async { crate::torrent::new_session(&self.settings()).await }).await?.clone())
+    }
+
+    fn torrent_probe_bytes(&self, bytes: &[u8], input: &str) -> Result<ProbeInfo> {
+        let (torrent, name) = crate::torrent::inspect(bytes)?;
+        self.inner.store.save_torrent(&torrent.info_hash, bytes)?;
+        let duplicate = self
+            .inner
+            .jobs
+            .lock()
+            .values()
+            .find(|e| e.job.torrent.as_ref().is_some_and(|t| t.info_hash == torrent.info_hash))
+            .map(|e| e.job.id);
+        let dir = self.settings().dir_for_category("torrents");
+        Ok(ProbeInfo {
+            size: Some(torrent.selected_size()),
+            exists: dir.join(&name).exists(),
+            torrent: Some(torrent),
+            size_estimated: false,
+            media_options: vec![],
+            probe_id: None,
+            final_url: input.into(),
+            file_name: name,
+            resumable: true,
+            mime: Some("application/x-bittorrent".into()),
+            category: "torrents".into(),
+            dir,
+            duplicate_of: duplicate,
+            warnings: vec![
+                "Torrent pieces are verified automatically. Uploading is enabled while downloading and stops at completion.".into()
+            ],
+            status: 200,
+            looks_like_html: false,
+        })
+    }
+
+    async fn probe_torrent(&self, input: &str) -> Result<ProbeInfo> {
+        let normalized;
+        let input = if input.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("magnet:")) {
+            normalized = format!("magnet:{}", &input[7..]);
+            &normalized
+        } else {
+            input
+        };
+        if input.starts_with("magnet:") {
+            let magnet = librqbit::Magnet::parse(input).map_err(|_| EngineError::Invalid("Invalid magnet link.".into()))?;
+            if let Some(hash) = magnet.as_id20() {
+                if let Ok(bytes) = self.inner.store.load_torrent(&hash.as_string()) {
+                    return self.torrent_probe_bytes(&bytes, input);
+                }
+            }
+            let session = self.torrent_session().await?;
+            let (bytes, peers) = crate::torrent::resolve(&session, input).await?;
+            let info = self.torrent_probe_bytes(&bytes, input)?;
+            self.inner.torrent_peers.lock().insert(info.torrent.as_ref().unwrap().info_hash.clone(), peers);
+            Ok(info)
+        } else {
+            self.torrent_probe_bytes(&crate::torrent::read_local(input).await?, input)
+        }
+    }
+
     pub async fn probe_media(&self, req: ProbeRequest) -> Result<ProbeInfo> {
         validate_url(&req.url)?;
         let mut info = crate::media::probe(req, &self.settings()).await?;
@@ -324,6 +396,9 @@ impl Engine {
     /// response is kept for a minute so that confirming the download reuses
     /// it instead of requesting the file twice (important for one-time links).
     pub async fn probe(&self, req: ProbeRequest) -> Result<ProbeInfo> {
+        if crate::torrent::is_input(&req.url) {
+            return self.probe_torrent(req.url.trim()).await;
+        }
         validate_url(&req.url)?;
         let client = self.inner.client.read().clone();
         let headers = http::header_map(&req.headers, req.referrer.as_deref());
@@ -341,6 +416,27 @@ impl Engine {
             _ => names::choose(None, &meta.final_url, &req.url, mime.as_deref()),
         };
         let category = settings.category_for(&file_name);
+        if !meta.looks_like_html()
+            && (file_name.to_ascii_lowercase().ends_with(".torrent") || mime.as_deref() == Some("application/x-bittorrent"))
+        {
+            use futures_util::StreamExt;
+            let mut stream = resp.bytes_stream();
+            let mut bytes = Vec::new();
+            let read = async {
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(http::request_error)?;
+                    if bytes.len().saturating_add(chunk.len()) > crate::torrent::MAX_METAINFO {
+                        return Err(EngineError::Invalid("Torrent metadata exceeds 16 MiB.".into()));
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                Ok::<(), EngineError>(())
+            };
+            tokio::time::timeout(Duration::from_secs(30), read)
+                .await
+                .map_err(|_| EngineError::Invalid("Timed out reading torrent metadata.".into()))??;
+            return self.torrent_probe_bytes(&bytes, &req.url);
+        }
         let dir = settings.dir_for_category(&category);
         let size = meta.total_size();
         let resumable = size.is_some() && (meta.status == 206 || meta.accept_ranges) && meta.content_encoding.is_none();
@@ -359,6 +455,7 @@ impl Engine {
         let duplicate_of = self.find_by_url(&req.url).or_else(|| self.find_by_url(&meta.final_url));
         let probe_id = Uuid::new_v4();
         let info = ProbeInfo {
+            torrent: None,
             size_estimated: false,
             media_options: vec![],
             probe_id: Some(probe_id),
@@ -386,8 +483,30 @@ impl Engine {
 
     // ----- lifecycle -----------------------------------------------------
 
-    pub fn add(&self, new: NewJob) -> Result<JobId> {
-        validate_url(&new.url)?;
+    pub fn add(&self, mut new: NewJob) -> Result<JobId> {
+        if let Some(requested) = &new.torrent {
+            let bytes = self.inner.store.load_torrent(&requested.info_hash)?;
+            let (mut validated, _) = crate::torrent::inspect(&bytes)?;
+            if validated.info_hash != requested.info_hash {
+                return Err(EngineError::Invalid("Torrent metadata identity mismatch.".into()));
+            }
+            validated.select(requested.only_files.clone())?;
+            if self
+                .inner
+                .jobs
+                .lock()
+                .values()
+                .any(|e| e.job.state != JobState::Completed && e.job.torrent.as_ref().is_some_and(|t| t.info_hash == validated.info_hash))
+            {
+                return Err(EngineError::Invalid("This torrent is already in CrowDM. Resume its existing download.".into()));
+            }
+            new.size_hint = Some(validated.selected_size());
+            new.category = Some("torrents".into());
+            new.media_download = false;
+            new.torrent = Some(validated);
+        } else {
+            validate_url(&new.url)?;
+        }
         let settings = self.settings();
         let pending = new.probe_id.and_then(|id| self.inner.probes.lock().remove(&id));
         let meta = pending.as_ref().map(|p| &p.meta);
@@ -425,6 +544,8 @@ impl Engine {
         let now = now_ms();
         let size = meta.and_then(|m| m.total_size()).or(new.size_hint);
         let job = Job {
+            package: new.package.clone(),
+            torrent: new.torrent.clone(),
             media_download: new.media_download,
             media_format: new.media_format.clone(),
             id: Uuid::new_v4(),
@@ -436,7 +557,7 @@ impl Engine {
             dir,
             category,
             size,
-            resumable: if new.media_download { Some(true) } else { None },
+            resumable: if new.media_download || new.torrent.is_some() { Some(true) } else { None },
             etag: None,
             last_modified: None,
             mime,
@@ -565,6 +686,43 @@ impl Engine {
                 Limits { global: self.inner.global_limit.clone(), job: limiter.clone(), connections: self.inner.connections.clone() };
             let client = self.inner.client.read().clone();
             let hooks = self.hooks(id);
+            let torrent_job = self.inner.jobs.lock().get(&id).filter(|e| e.job.torrent.is_some()).map(|e| e.job.clone());
+            if let Some(job) = torrent_job {
+                let outcome = async {
+                    let session =
+                        self.torrent_session().await.map_err(|e| Stop::Failed(TransferError::new(ErrorKind::Network, e.to_string())))?;
+                    let info = job.torrent.as_ref().unwrap();
+                    let bytes = self
+                        .inner
+                        .store
+                        .load_torrent(&info.info_hash)
+                        .map_err(|e| Stop::Failed(TransferError::new(ErrorKind::Io, e.to_string())))?;
+                    let peers = self.inner.torrent_peers.lock().get(&info.info_hash).cloned().unwrap_or_default();
+                    let size = crate::torrent::run(session, bytes, job.clone(), shared.clone(), cancel.clone(), peers).await?;
+                    if cancel.is_cancelled() {
+                        return Err(Stop::Canceled);
+                    }
+                    shared.set_phase(Some("Finishing torrent"));
+                    let final_path = tokio::task::spawn_blocking(move || crate::torrent::finish(&job))
+                        .await
+                        .map_err(|_| Stop::Failed(TransferError::new(ErrorKind::Io, "Torrent finalization failed.")))?
+                        .map_err(|e| Stop::Failed(TransferError::new(ErrorKind::Io, e.to_string())))?;
+                    let mut jobs = self.inner.jobs.lock();
+                    if let Some(entry) = jobs.get_mut(&id) {
+                        entry.job.file_name = final_path.file_name().unwrap().to_string_lossy().into_owned();
+                        entry.job.state = JobState::Completed;
+                        entry.job.completed_at = Some(now_ms());
+                        entry.job.size = Some(size);
+                        entry.job.downloaded = size;
+                        entry.job.headers.clear();
+                        entry.job.error = None;
+                        entry.segments.clear();
+                    }
+                    Ok(())
+                }
+                .await;
+                break outcome;
+            }
             let media_job = self.inner.jobs.lock().get(&id).filter(|e| e.job.media_download).map(|e| e.job.clone());
             let res = if let Some(job) = media_job {
                 crate::media::run(job, shared.clone(), cancel.clone(), limiter.clone(), self.inner.global_limit.clone()).await
@@ -641,6 +799,10 @@ impl Engine {
         {
             let mut jobs = self.inner.jobs.lock();
             let Some(entry) = jobs.get_mut(&id) else { return };
+            if entry.job.torrent.is_some() && outcome.is_err() {
+                entry.job.downloaded = shared.downloaded();
+                entry.segments = shared.segments();
+            }
             entry.run = None;
             entry.phase = None;
             entry.job.active_ms += started.elapsed().as_millis() as u64;
@@ -890,6 +1052,9 @@ impl Engine {
         let entry = self.inner.jobs.lock().remove(&id).ok_or(EngineError::NotFound)?;
         self.inner.store.delete_job(&id)?;
         if entry.job.state != JobState::Completed {
+            if entry.job.torrent.is_some() {
+                crate::torrent::cleanup(&entry.job);
+            }
             let _ = std::fs::remove_file(entry.job.part_path());
             if entry.job.media_download {
                 crate::media::cleanup(&entry.job);
@@ -908,6 +1073,9 @@ impl Engine {
             let mut jobs = self.inner.jobs.lock();
             let entry = jobs.get_mut(&id).ok_or(EngineError::NotFound)?;
             let _ = std::fs::remove_file(entry.job.part_path());
+            if entry.job.torrent.is_some() {
+                crate::torrent::cleanup(&entry.job);
+            }
             if entry.job.media_download {
                 crate::media::cleanup(&entry.job);
             }
@@ -937,6 +1105,19 @@ impl Engine {
             let entry = jobs.get_mut(&id).ok_or(EngineError::NotFound)?;
             let running = entry.run.is_some();
             let j = &mut entry.job;
+            if j.torrent.is_some() {
+                if patch.url.is_some() {
+                    return Err(EngineError::Invalid("A torrent's identity cannot be changed. Add the new torrent separately.".into()));
+                }
+                if running && patch.speed_limit.is_some() {
+                    return Err(EngineError::Invalid("Pause this torrent before changing its speed limit, then resume.".into()));
+                }
+                if patch.dir.is_some() && crate::torrent::staging_dir(j).exists() {
+                    return Err(EngineError::Invalid(
+                        "This torrent has saved pieces. Keep its destination or add a separate download in the new folder.".into(),
+                    ));
+                }
+            }
             if let Some(limit) = patch.speed_limit {
                 j.speed_limit = limit.filter(|v| *v > 0);
                 if let Some(run) = &entry.run {
@@ -1107,9 +1288,23 @@ impl Engine {
             // All HTTP workers share one bucket. Each external media process
             // gets one equal share of the same configured global budget.
             let media = jobs.values().filter(|e| e.run.is_some() && e.job.media_download).count() as u64;
-            let http = u64::from(jobs.values().any(|e| e.run.is_some() && !e.job.media_download));
+            let torrents = u64::from(jobs.values().any(|e| e.run.is_some() && e.job.torrent.is_some()));
+            let http = u64::from(jobs.values().any(|e| e.run.is_some() && !e.job.media_download && e.job.torrent.is_none()));
             let total = self.inner.settings.read().speed_limit;
-            self.inner.global_limit.set_rate(if total == 0 { 0 } else { (total / (media + http).max(1)).max(1) });
+            let share = if total == 0 { 0 } else { (total / (media + http + torrents).max(1)).max(1) };
+            self.inner.global_limit.set_rate(share);
+            if let Some(session) = self.inner.torrents.get() {
+                let download = crate::torrent::rate(share);
+                let upload = crate::torrent::rate(self.inner.settings.read().torrents.upload_limit);
+                // Updating an unchanged governor resets its token bucket and
+                // would grant another burst on every progress tick.
+                if session.ratelimits.get_download_bps() != download {
+                    session.ratelimits.set_download_bps(download);
+                }
+                if session.ratelimits.get_upload_bps() != upload {
+                    session.ratelimits.set_upload_bps(upload);
+                }
+            }
             for entry in jobs.values_mut() {
                 let phase_outside = entry.phase.clone();
                 let Some(run) = entry.run.as_mut() else { continue };
@@ -1202,6 +1397,9 @@ impl Engine {
             }
         };
         let _ = tokio::time::timeout(Duration::from_secs(8), all).await;
+        if let Some(session) = self.inner.torrents.get() {
+            session.stop().await;
+        }
     }
 }
 

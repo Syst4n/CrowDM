@@ -2,11 +2,11 @@
 
 # CrowDM
 
-A Windows download manager with fast segmented transfers, browser capture,
-and video downloads in the format you need. Built for clear control over
+A Windows download manager with fast segmented transfers, native torrents,
+multipart download packages, browser capture and video downloads. Built for clear control over
 your files: pause, resume, queue, schedule, sort, and find them again.
 
-**[Download the 0.2.1 preview](https://github.com/Syst4n/CrowDM/releases/tag/v0.2.1)**
+**[Download the 0.3.0 preview](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0)**
 · **[Installation and download guide](docs/INSTALL.md)**
 · **[Report an issue](https://github.com/Syst4n/CrowDM/issues)**
 
@@ -14,6 +14,22 @@ your files: pause, resume, queue, schedule, sort, and find them again.
 
 ## What CrowDM does well
 
+- **Native torrents and magnets.** Open .torrent files or magnet links,
+  choose files, pause/resume verified pieces and manage them in the queue.
+  Windows handler registration, TCP/uTP peers, DHT, trackers, peer exchange,
+  configurable ports and UPnP help connect to available peers. No default
+  speed cap; actual speed depends on your swarm, connection and storage.
+- **Link Grabber and packages.** Paste many links or collect supported file
+  links from a page, review availability and duplicates, rename packages and
+  keep related archive parts in one folder. The inbox is saved between runs.
+  Package progress, pause/resume and quiet notifications keep batches manageable.
+  Clipboard collection is optional; copying never starts a download by itself.
+  Select links on a page and a faint Nightwing button appears beside them;
+  click it to open the app's Link Grabber with the whole selection.
+- **Updates on your terms.** An update screen shows versions, “What's New,”
+  verified installer downloads and extension reload guidance. Updates are
+  announced separately from ordinary development releases. Public GitHub
+  download counts are shown by version without tracking installations.
 - **Resumable transfers.** Up to 32 connections per file, adaptive fallback
   when servers limit connections, recovery after interruptions and restarts,
   remote-file change detection, speed limits, and optional checksum checks.
@@ -36,13 +52,18 @@ your files: pause, resume, queue, schedule, sort, and find them again.
 - **A quiet, adaptable interface.** Independent light, dark or Windows matching
   modes with ten palettes, Nightwing branding, a separate Appearance section, compact capture dialogs,
   resizable details, sorting and dated completion times. Subtle animation can
-  be disabled and respects reduced-motion preferences.
+  be disabled and respects reduced-motion preferences. Windows notifications
+  use CrowDM's own identity and logo, including portable and local builds.
 - **Control while away.** Queue concurrency, schedules, tray operation,
   launch at startup, sleep prevention and actions after the queue finishes.
 
 Downloads and settings stay on your PC. No CrowDM account, cloud transfer
 service or analytics is required. Browser credentials are used for the
 requested download and cleared from completed jobs.
+
+![Torrent file selection](docs/screenshots/torrent-confirmation.png)
+
+![Multipart package downloads](docs/screenshots/packages.png)
 
 ![Appearance settings](docs/screenshots/appearance-nightwing.png)
 
@@ -52,7 +73,7 @@ Choose the same palette in either mode, or let Windows select light/dark.
 
 ## Install
 
-1. Download the x64 setup EXE from [Releases](https://github.com/Syst4n/CrowDM/releases/tag/v0.2.1)
+1. Download the x64 setup EXE from [Releases](https://github.com/Syst4n/CrowDM/releases/tag/v0.3.0)
    and install it. Windows 10/11 is supported; installation is per user.
 2. Start CrowDM and open **Settings → Browsers → Open extension folder**.
 3. Chrome/Edge: enable Developer mode on the browser's extension page,
@@ -70,16 +91,22 @@ portable use and troubleshooting.
 
 ## Preview status
 
-0.2.1 is an early preview, released for testing and feedback. Installers are
-unsigned, Firefox's extension is temporarily loaded, and automatic app
-updates are not implemented yet. DRM, active live broadcasts, form POST
+0.3.0 is an early preview, released for testing and feedback. Installers are
+unsigned, Firefox's extension is temporarily loaded, and installation of
+announced updates remains manual. DRM, active live broadcasts, form POST
 downloads and unsupported sites are excluded or handed back to the browser.
 Universal video downloading is not possible. MP4 availability and quality
 depend on the source; MP3 conversion does not improve source audio quality.
 
 After upgrading, reload the browser extension and refresh already-open video
 tabs once. Your history, settings, downloaded files and partial downloads
-are retained. See [status](docs/STATUS.md) and [release notes](docs/releases/v0.2.1.md).
+are retained. See [status](docs/STATUS.md) and [release notes](docs/releases/v0.3.0.md).
+
+Torrents support v1/hybrid metadata. Sharing stops on completion; v2-only
+torrents and completed-torrent seeding are not included. Link Grabber supports
+direct links and simple host download pages, rather than every commercial host
+or captcha/account system. Archive parts are retained; automatic extraction
+is planned. GitHub downloads are not a count of active or unique users.
 
 ## Build and test
 

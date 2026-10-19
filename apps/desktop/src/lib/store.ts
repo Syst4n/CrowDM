@@ -30,7 +30,9 @@ interface State {
   sort: SortKey;
   selected: string[];
   lastClicked: string | null;
-  view: "downloads" | "settings";
+  view: "downloads" | "settings" | "grabber";
+  grabbedCount: number;
+  setGrabbedCount(n: number): void;
   toast: { text: string; tone: "info" | "error" } | null;
 
   setFilter(f: Filter): void;
@@ -57,6 +59,8 @@ export const useStore = create<State>((set, get) => ({
   selected: [],
   lastClicked: null,
   view: "downloads",
+  grabbedCount: 0,
+  setGrabbedCount: (grabbedCount) => set({grabbedCount}),
   toast: null,
 
   setFilter: (filter) => set({ filter, view: "downloads" }),

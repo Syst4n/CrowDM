@@ -137,6 +137,10 @@ impl Segment {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
+    #[serde(default)]
+    pub package: Option<String>,
+    #[serde(default)]
+    pub torrent: Option<crate::torrent::TorrentInfo>,
     /// yt-dlp media job. Defaults to false for existing direct-file videos.
     #[serde(default)]
     pub media_download: bool,
@@ -241,6 +245,8 @@ pub struct Progress {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NewJob {
+    pub package: Option<String>,
+    pub torrent: Option<crate::torrent::TorrentInfo>,
     #[serde(default)]
     pub media_download: bool,
     #[serde(default)]
@@ -280,6 +286,8 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeInfo {
+    #[serde(default)]
+    pub torrent: Option<crate::torrent::TorrentInfo>,
     #[serde(default)]
     pub size_estimated: bool,
     #[serde(default)]

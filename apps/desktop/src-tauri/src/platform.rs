@@ -149,6 +149,83 @@ mod imp {
         Ok(())
     }
 
+    /// Advertise handlers without overwriting .torrent/magnet UserChoice or
+    /// another client's default. Windows owns the user's final selection.
+    pub fn register_torrent_handlers() -> std::io::Result<()> {
+        register_torrent_handlers_at(&RegKey::predef(HKEY_CURRENT_USER), &std::env::current_exe()?)?;
+        unsafe {
+            windows_sys::Win32::UI::Shell::SHChangeNotify(0x0800_0000, 0, std::ptr::null(), std::ptr::null());
+        }
+        Ok(())
+    }
+
+    pub fn register_notification_identity(data_dir: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(data_dir)?;
+        let icon = data_dir.join("notification-icon.png");
+        let bytes = include_bytes!("../icons/128x128.png");
+        if std::fs::read(&icon).ok().as_deref() != Some(bytes.as_slice()) {
+            std::fs::write(&icon, bytes)?;
+        }
+        register_notification_at(&RegKey::predef(HKEY_CURRENT_USER), &icon)?;
+        let id = wide(std::ffi::OsStr::new(crate::notifications::APP_ID));
+        unsafe {
+            windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
+        }
+        Ok(())
+    }
+    fn register_notification_at(root: &RegKey, icon: &Path) -> std::io::Result<()> {
+        let (key, _) = root.create_subkey(format!(r"Software\Classes\AppUserModelId\{}", crate::notifications::APP_ID))?;
+        key.set_value("DisplayName", &"CrowDM")?;
+        key.set_value("IconUri", &icon.to_string_lossy().to_string())?;
+        key.set_value("IconBackgroundColor", &"0")?;
+        Ok(())
+    }
+
+    pub(super) fn register_torrent_handlers_at(root: &RegKey, exe: &Path) -> std::io::Result<()> {
+        let command = format!("\"{}\" \"%1\"", exe.display());
+        let icon = format!("\"{}\",0", exe.display());
+        for (id, description, protocol) in [("CrowDM.Torrent", "BitTorrent metadata file", false), ("CrowDM.Magnet", "Magnet link", true)] {
+            let base = format!(r"Software\Classes\{id}");
+            let (key, _) = root.create_subkey(&base)?;
+            key.set_value("", &description)?;
+            if protocol {
+                key.set_value("URL Protocol", &"")?;
+            }
+            root.create_subkey(format!(r"{base}\DefaultIcon"))?.0.set_value("", &icon)?;
+            root.create_subkey(format!(r"{base}\shell\open\command"))?.0.set_value("", &command)?;
+            let (app, _) = root.create_subkey(format!(r"{base}\Application"))?;
+            app.set_value("ApplicationName", &"CrowDM")?;
+            app.set_value("ApplicationDescription", &"Download torrents with CrowDM")?;
+            app.set_value("ApplicationIcon", &icon)?;
+        }
+        let (app, _) = root.create_subkey(r"Software\Classes\Applications\CrowDM.exe")?;
+        app.set_value("FriendlyAppName", &"CrowDM")?;
+        app.create_subkey(r"shell\open\command")?.0.set_value("", &command)?;
+        app.create_subkey("SupportedTypes")?.0.set_value(".torrent", &"")?;
+        root.create_subkey(r"Software\Classes\.torrent\OpenWithProgids")?.0.set_value("CrowDM.Torrent", &"")?;
+        root.create_subkey(r"Software\Classes\magnet\OpenWithProgids")?.0.set_value("CrowDM.Magnet", &"")?;
+        let (cap, _) = root.create_subkey(r"Software\CrowDM\Capabilities")?;
+        cap.set_value("ApplicationName", &"CrowDM")?;
+        cap.set_value("ApplicationDescription", &"Downloads, .torrent files and magnet links")?;
+        cap.set_value("ApplicationIcon", &icon)?;
+        cap.create_subkey("FileAssociations")?.0.set_value(".torrent", &"CrowDM.Torrent")?;
+        cap.create_subkey("URLAssociations")?.0.set_value("magnet", &"CrowDM.Magnet")?;
+        root.create_subkey(r"Software\RegisteredApplications")?.0.set_value("CrowDM", &r"Software\CrowDM\Capabilities")?;
+        Ok(())
+    }
+
+    pub fn choose_torrent_defaults() -> Result<(), String> {
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let op = wide(std::ffi::OsStr::new("open"));
+        let uri = wide(std::ffi::OsStr::new("ms-settings:defaultapps?registeredAppUser=CrowDM"));
+        let result =
+            unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), uri.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+        if result as isize <= 32 {
+            return Err("Windows could not open Default apps settings.".into());
+        }
+        Ok(())
+    }
+
     fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
         use std::os::windows::ffi::OsStrExt;
         s.encode_wide().chain(Some(0)).collect()
@@ -259,6 +336,44 @@ mod imp {
             }
         }
         out
+    }
+    #[cfg(test)]
+    mod torrent_registration_tests {
+        use super::*;
+        #[test]
+        fn notification_identity_uses_crowdm_and_matches_the_installer() {
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let path = format!(r"Software\CrowDMTests\{}", uuid::Uuid::new_v4());
+            let (root, _) = hkcu.create_subkey(&path).unwrap();
+            register_notification_at(&root, Path::new(r"C:\CrowDM\notification-icon.png")).unwrap();
+            let key = root.open_subkey(format!(r"Software\Classes\AppUserModelId\{}", crate::notifications::APP_ID)).unwrap();
+            assert_eq!(key.get_value::<String, _>("DisplayName").unwrap(), "CrowDM");
+            assert!(key.get_value::<String, _>("IconUri").unwrap().ends_with("notification-icon.png"));
+            let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+            assert_eq!(config["identifier"], crate::notifications::APP_ID);
+            drop(key);
+            drop(root);
+            hkcu.delete_subkey_all(path).unwrap();
+        }
+        #[test]
+        fn handlers_advertise_both_inputs_and_preserve_other_defaults() {
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let test_path = format!(r"Software\CrowDMTests\{}", uuid::Uuid::new_v4());
+            let (root, _) = hkcu.create_subkey(&test_path).unwrap();
+            root.create_subkey(r"Software\Classes\magnet").unwrap().0.set_value("", &"Other.Client").unwrap();
+            register_torrent_handlers_at(&root, Path::new(r"C:\Program Files\CrowDM\CrowDM.exe")).unwrap();
+            let command: String = root.open_subkey(r"Software\Classes\CrowDM.Magnet\shell\open\command").unwrap().get_value("").unwrap();
+            assert_eq!(command, r#""C:\Program Files\CrowDM\CrowDM.exe" "%1""#);
+            let existing: String = root.open_subkey(r"Software\Classes\magnet").unwrap().get_value("").unwrap();
+            assert_eq!(existing, "Other.Client");
+            let torrent: String =
+                root.open_subkey(r"Software\CrowDM\Capabilities\FileAssociations").unwrap().get_value(".torrent").unwrap();
+            assert_eq!(torrent, "CrowDM.Torrent");
+            let magnet: String = root.open_subkey(r"Software\CrowDM\Capabilities\URLAssociations").unwrap().get_value("magnet").unwrap();
+            assert_eq!(magnet, "CrowDM.Magnet");
+            drop(root);
+            hkcu.delete_subkey_all(test_path).unwrap();
+        }
     }
 }
 

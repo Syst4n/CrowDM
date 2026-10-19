@@ -90,3 +90,14 @@ test('a stale menu selection is rejected when the tab has moved to another video
   assert.equal(response.ok, false);
   assert.match(response.error, /video changed/);
 });
+
+test('selected link batches are deduplicated, acknowledged together and respect privacy exclusions', async()=>{
+  const bg=await background();
+  bg.eval('port={postMessage(message){globalThis.lastSent=message;onAppMessage({type:"received",replyTo:message.id});}};appReady=true');
+  const result=await bg.eval('sendBatchLinks("https://files.test/a#part01.rar https://files.test/a#same.rar https://files.test/b", "https://page.test/",false)');
+  assert.equal(result.ok,true);assert.equal(bg.eval('lastSent.type'),'batchLinks');assert.equal(bg.eval('lastSent.text.split("\\n").length'),2);
+  bg.eval('settings.includePrivate=false');assert.equal((await bg.eval('sendBatchLinks("https://files.test/a","https://page.test/",true)')).ok,false);
+  bg.eval('settings.excludedSites=["page.test"]');assert.equal((await bg.eval('sendBatchLinks("https://files.test/a","https://page.test/",false)')).ok,false);
+  bg.eval('settings.excludedSites=[];pausedHere=true');assert.equal((await bg.eval('sendBatchLinks("https://files.test/a","https://page.test/",false)')).ok,false);
+  assert.equal(bg.eval('selectedUrls("https://user:password@files.test/a").length'),0);
+});

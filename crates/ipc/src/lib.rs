@@ -111,6 +111,13 @@ pub enum FromBrowser {
         id: String,
         capture: Capture,
     },
+    /// Explicit user-selected links, collected without individual capture dialogs.
+    BatchLinks {
+        id: String,
+        text: String,
+        #[serde(default)]
+        incognito: bool,
+    },
     /// The browser download we were deciding about went away (the user
     /// cancelled it in the browser, or it finished before we answered).
     CaptureGone {

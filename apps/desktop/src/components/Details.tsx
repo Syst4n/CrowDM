@@ -51,7 +51,7 @@ export function Details({ job: j, onRemove }: { job: JobSnapshot; onRemove: (ids
           <button className="btn" onClick={() => run(api.reveal(j.id))}>
             Show in folder
           </button>
-          {j.state !== "completed" && j.state !== "downloading" && !refreshing && (
+          {!j.torrent && j.state !== "completed" && j.state !== "downloading" && !refreshing && (
             <button className="btn ghost" onClick={() => (setNewUrl(j.url), setRefreshing(true))}>
               Update address
             </button>
@@ -93,6 +93,7 @@ export function Details({ job: j, onRemove }: { job: JobSnapshot; onRemove: (ids
           <dd>{j.resumable == null ? "Not checked yet" : j.resumable ? "Supported" : "Not supported by the server"}</dd>
           <dt>Added</dt>
           <dd title={new Date(j.createdAt).toLocaleString()}>{fmt.when(j.createdAt)}</dd>
+          {j.torrent && <><dt>Selected files</dt><dd>{j.torrent.onlyFiles?.length ?? j.torrent.files.length} of {j.torrent.files.length} · pieces verified automatically</dd></>}
           {j.checksum && (
             <>
               <dt>Checksum</dt>
@@ -130,7 +131,7 @@ export function Details({ job: j, onRemove }: { job: JobSnapshot; onRemove: (ids
         <span className="label">Transfer</span>
         <SegmentMap job={j} />
         <dl className="kv" style={{ gridTemplateColumns: "100px 1fr", marginTop: 4 }}>
-          <dt>Connections</dt>
+            <dt>{j.torrent ? "Peers" : "Connections"}</dt>
           <dd className="num">{j.state === "downloading" ? j.connections : "None"}</dd>
           <dt>Time left</dt>
           <dd className="num">{j.state === "downloading" ? fmt.duration(j.eta) || "Calculating" : "None"}</dd>
@@ -165,6 +166,7 @@ export function Details({ job: j, onRemove }: { job: JobSnapshot; onRemove: (ids
 
 function SegmentMap({ job: j }: { job: JobSnapshot }) {
   const size = j.size;
+  if (j.torrent && size) return <div className="segmap" aria-label="Verified torrent pieces"><span style={{left:0,width:`${Math.min(100,j.downloaded/size*100)}%`}} /></div>;
   if (j.state === "completed") {
     return (
       <div className="segmap" aria-label="Download complete">

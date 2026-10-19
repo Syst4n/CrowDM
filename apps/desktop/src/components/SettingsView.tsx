@@ -6,6 +6,7 @@ import { useStore } from "../lib/store";
 import * as fmt from "../lib/format";
 import { Logo } from "./Logo";
 import { Select } from "./Select";
+import { UpdatesView } from "./UpdatesView";
 import { effectiveAppearance, paletteStyle, themes } from "../lib/appearance";
 import type { ColorMode, Palette } from "../lib/api";
 
@@ -14,13 +15,16 @@ import type { ColorMode, Palette } from "../lib/api";
 let saves: Promise<unknown> = Promise.resolve();
 let saveRevision = 0;
 
-type Section = "general" | "appearance" | "folders" | "connections" | "browsers" | "queue" | "about";
+type Section = "general" | "appearance" | "folders" | "connections" | "browsers" | "torrents" | "batch" | "updates" | "queue" | "about";
 const SECTIONS: [Section, string][] = [
   ["general", "General"],
   ["appearance", "Appearance"],
   ["folders", "Folders and categories"],
   ["connections", "Connections"],
   ["browsers", "Browsers"],
+  ["torrents", "Torrents"],
+  ["batch", "Batch downloads"],
+  ["updates", "Updates and downloads"],
   ["queue", "Queue and schedule"],
   ["about", "About"],
 ];
@@ -61,6 +65,9 @@ export function SettingsView() {
         {section === "folders" && <Folders s={settings} save={save} />}
         {section === "connections" && <Connections s={settings} save={save} />}
         {section === "browsers" && <Browsers s={settings} save={save} />}
+        {section === "torrents" && <Torrents s={settings} save={save} />}
+        {section === "batch" && <BatchSettings s={settings} save={save} />}
+        {section === "updates" && <UpdatesView />}
         {section === "queue" && <QueueSettings s={settings} save={save} />}
         {section === "about" && <About />}
       </div>
@@ -69,6 +76,11 @@ export function SettingsView() {
 }
 
 type P = { s: Settings; save: (p: Partial<Settings>) => void };
+
+function BatchSettings({s,save}:P){
+  const change=(patch:Partial<Settings["batch"]>)=>save({batch:{...s.batch,...patch}});
+  return <section><h2>Batch downloads</h2><Check checked={s.batch.monitorClipboard} onChange={v=>change({monitorClipboard:v})} title="Collect copied links automatically" hint="While CrowDM is running, watch clipboard text for links and add them quietly to Link Grabber. Downloads start only after you review and add them. Clipboard text stays on this PC; checking contacts the linked sites."/><Check checked={s.batch.groupParts} onChange={v=>change({groupParts:v})} title="Group related parts into package folders" hint="Names such as Archive.part01.rar and Archive.part02.rar share a folder. Rename or combine packages in Link Grabber before adding them."/><Check checked={s.batch.skipDuplicates} onChange={v=>change({skipDuplicates:v})} title="Skip links already in downloads"/><Check checked={s.batch.quietNotifications} onChange={v=>change({quietNotifications:v})} title="Notify once per package" hint="Suppress individual part notifications. Report the package result when all files finish or fail."/><div className="grid-2"><div className="field"><label htmlFor="batch-checks">Simultaneous link checks</label><input id="batch-checks" className="input" type="number" min={1} max={8} value={s.batch.checkConcurrency} onChange={e=>{if(e.target.value)change({checkConcurrency:Number(e.target.value)});}}/></div><div className="field"><label htmlFor="batch-limit">Maximum links in inbox</label><input id="batch-limit" className="input" type="number" min={10} max={1000} value={s.batch.maxLinks} onChange={e=>{if(e.target.value)change({maxLinks:Number(e.target.value)});}}/></div></div><p className="hint">Batch downloads use the shared queue, connection budget, retries, speed limit and schedule. Set simultaneous downloads in Queue and schedule. Archive parts are kept together; automatic extraction and passwords are not supported yet.</p></section>;
+}
 
 function Check({ checked, onChange, title, hint }: { checked: boolean; onChange: (v: boolean) => void; title: string; hint?: string }) {
   return (
@@ -92,6 +104,7 @@ function General({ s, save }: P) {
       <Check checked={s.startMinimized} onChange={(v) => save({ startMinimized: v })} title="Start without opening the window" />
       <Check checked={s.confirmCaptured} onChange={(v) => save({ confirmCaptured: v })} title="Ask before starting a download from the browser" hint="Turn off to start caught downloads right away with the default folder." />
       <Check checked={s.notifyOnComplete} onChange={(v) => save({ notifyOnComplete: v })} title="Show a notification when a download finishes" />
+      <div><button className="btn" onClick={()=>void api.testNotification().catch(e=>useStore.getState().showToast(errorText(e),"error"))}>Test CrowDM notification</button></div>
       <Check checked={s.resumeOnStartup} onChange={(v) => save({ resumeOnStartup: v })} title="Continue unfinished downloads when CrowDM starts" />
       <Check
         checked={s.prewarmDialog}
@@ -103,7 +116,7 @@ function General({ s, save }: P) {
       <Check checked={s.power.preventSleepActive} onChange={(v) => save({ power: { ...s.power, preventSleepActive: v } })} title="Avoid sleep mode if there is an active download" />
       <Check checked={s.power.preventSleepScheduled} onChange={(v) => save({ power: { ...s.power, preventSleepScheduled: v } })} title="Avoid sleep mode if there is a scheduled download" hint="Keeps Windows awake while scheduled downloads are waiting. It cannot wake a PC that is already asleep." />
       <Check checked={s.power.allowSleepResumable} onChange={(v) => save({ power: { ...s.power, allowSleepResumable: v } })} title="Allow sleep mode if downloads can be resumed later" hint="Overrides the active-download rule when every active download supports resume." />
-      <label className="check muted"><input type="checkbox" checked disabled /><span>Allow sleep mode while sharing files<div className="hint">CrowDM does not currently share files, so sharing never prevents sleep.</div></span></label>
+      <p className="hint">Torrents share pieces while downloading, so the active-download sleep rule applies. Sharing stops when a torrent completes.</p>
     </section>
   );
 }
@@ -307,6 +320,46 @@ function Connections({ s, save }: P) {
       </div>
     </section>
   );
+}
+
+function Torrents({s, save}: P) {
+  const showToast = useStore((st) => st.showToast);
+  const t=s.torrents;
+  const setT=(patch:Partial<Settings["torrents"]>)=>save({torrents:{...t,...patch}});
+  return <section>
+    <h2>Torrents</h2>
+    <p className="hint">Open a .torrent file with the magnet button in the toolbar, or paste a magnet link into Add URL. Choose the files and destination before starting.</p>
+    <h3>Windows integration</h3>
+    <div className="actions">
+      <button className="btn" onClick={()=>api.registerTorrentHandlers().then(()=>showToast("CrowDM is registered for .torrent files and magnet links.")).catch((e)=>showToast(errorText(e),"error"))}>Register with Windows</button>
+      <button className="btn" onClick={()=>api.chooseTorrentDefaults().catch((e)=>showToast(errorText(e),"error"))}>Choose defaults in Windows</button>
+    </div>
+    <p className="hint">Choose CrowDM for .torrent and MAGNET in Windows Default apps to use it automatically. Your existing default remains until you choose.</p>
+    <h3>Connections and speed</h3>
+    <div className="grid-2">
+      <div className="field"><label htmlFor="torrent-peers">Maximum peers per torrent</label>
+        <input key={t.peerLimit} id="torrent-peers" className="input" type="number" min="20" max="1000" defaultValue={t.peerLimit} onBlur={(e)=>setT({peerLimit:Math.max(20,Math.min(1000,Number(e.target.value)||200))})}/>
+      </div>
+      <div className="field"><label htmlFor="torrent-port">Incoming port</label>
+        <input key={t.listenPort} id="torrent-port" className="input" type="number" min="0" max="65535" defaultValue={t.listenPort} onBlur={(e)=>setT({listenPort:Math.max(0,Math.min(65535,Number(e.target.value)||0))})}/>
+        <span className="hint">0 chooses an available port automatically.</span>
+      </div>
+      <div className="field"><label htmlFor="torrent-upload">Upload limit</label>
+        <input key={t.uploadLimit} id="torrent-upload" className="input" defaultValue={fmt.rateText(t.uploadLimit)} placeholder="No limit" onBlur={(e)=>{
+          const limit=fmt.parseRate(e.target.value);
+          if(limit==null||limit>0&&limit<16384){showToast("Use at least 16 KB/s, or leave it empty for no limit.","error");return;}
+          setT({uploadLimit:limit});
+        }}/>
+        <span className="hint">If uploading saturates your connection, leave some upstream bandwidth free to improve download speed.</span>
+      </div>
+    </div>
+    <Check checked={t.enableUpnp} onChange={(v)=>setT({enableUpnp:v})} title="Automatic port mapping (UPnP)" hint="Accept incoming peers when your router supports it. No Windows Firewall rules are changed automatically."/>
+    <Check checked={t.enableUtp} onChange={(v)=>setT({enableUtp:v})} title="Connect using TCP and uTP" hint="Allow both peer transports. Turn off to use TCP only."/>
+    <p className="hint">Restart CrowDM after changing peers, port or transports. DHT, tracker discovery and peer exchange are enabled for public torrents. Private tracker rules are respected; public trackers are never added automatically.</p>
+    <h3>Sharing</h3>
+    <p className="hint">Peers can see your IP address. CrowDM uploads pieces while downloading and stops sharing when the download completes. Finished torrents are not seeded in this preview.</p>
+    <p className="hint">Downloads are unlimited by default and use verified pieces and sparse files. Actual speed depends on seeds, peers, disk, router and connection. BitTorrent v1 and hybrid torrents are supported. Nonzero torrent limits and each shared global bandwidth allowance require at least 16 KB/s.</p>
+  </section>;
 }
 
 function Browsers({ s, save }: P) {

@@ -21,7 +21,7 @@ const common = {
   permissions: ["downloads", "nativeMessaging", "contextMenus", "cookies", "storage", "webRequest", "webNavigation"],
   host_permissions: ["<all_urls>"],
   action: { default_title: "CrowDM", default_popup: "popup.html", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
-  content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["themes.js", "video.js"], all_frames: true, run_at: "document_idle" }],
+  content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["themes.js", "video.js", "selection.js"], all_frames: true, run_at: "document_idle" }],
 };
 
 const targets = {

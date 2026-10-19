@@ -45,10 +45,20 @@ impl Store {
                  segments TEXT NOT NULL DEFAULT '[]',
                  created_at INTEGER NOT NULL
              );
-             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS torrent_metadata (info_hash TEXT PRIMARY KEY, data BLOB NOT NULL);",
         )?;
         conn.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)", params![SCHEMA_VERSION.to_string()])?;
         Ok(Store { conn: Mutex::new(conn) })
+    }
+
+    pub fn save_torrent(&self, hash: &str, bytes: &[u8]) -> Result<()> {
+        self.conn.lock().execute("INSERT OR REPLACE INTO torrent_metadata(info_hash,data) VALUES (?1,?2)", params![hash, bytes])?;
+        Ok(())
+    }
+
+    pub fn load_torrent(&self, hash: &str) -> Result<Vec<u8>> {
+        Ok(self.conn.lock().query_row("SELECT data FROM torrent_metadata WHERE info_hash=?1", [hash], |r| r.get(0))?)
     }
 
     pub fn load_jobs(&self) -> Result<Vec<(Job, Vec<Segment>)>> {

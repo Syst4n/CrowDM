@@ -5,6 +5,7 @@ import {
   Clock,
   DownloadSimple,
   GearSix,
+  LinkSimple,
   PauseCircle,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -22,6 +23,7 @@ export function Sidebar() {
   const view = useStore((s) => s.view);
   const setFilter = useStore((s) => s.setFilter);
   const setView = useStore((s) => s.setView);
+  const grabbedCount = useStore((s) => s.grabbedCount);
   const categories = useStore((s) => s.settings?.categories) ?? NO_CATEGORIES;
 
   const counts = useMemo(() => {
@@ -59,6 +61,7 @@ export function Sidebar() {
       {item({ kind: "paused" }, "Paused", <PauseCircle size={18} />, counts.c.paused)}
       {item({ kind: "failed" }, "Failed", <WarningCircle size={18} />, counts.c.failed)}
       {item({ kind: "completed" }, "Completed", <CheckCircle size={18} />, counts.c.completed)}
+      <button className={`nav-item ${view === "grabber" ? "active" : ""}`} onClick={() => setView("grabber")}><LinkSimple size={18}/><span>Link Grabber</span>{grabbedCount>0 && <span className="count">{grabbedCount}</span>}</button>
       <div className="nav-group">Categories</div>
       {categories.map((c) => item({ kind: "category", id: c.id }, c.name, <FileIcon category={c.id} />, counts.cat[c.id] ?? 0))}
       <div className="sidebar-foot">

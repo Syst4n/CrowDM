@@ -43,6 +43,7 @@ let outbox = [];
 const pending = new Map();
 const manualReceipts = new Map();
 const videoQueries = new Map();
+const batchReceipts = new Map();
 /** Download ids we are handling (to ignore duplicate events). */
 const handled = new Map();
 
@@ -79,6 +80,8 @@ function connect() {
     manualReceipts.clear();
     for (const finish of videoQueries.values()) finish({ ok: false, error: "CrowDM disconnected. Open the app and try again." });
     videoQueries.clear();
+    for (const finish of batchReceipts.values()) finish({ok:false,error:"CrowDM disconnected. Open the app and try again."});
+    batchReceipts.clear();
     // Anything still waiting goes back to the browser, so nothing is lost.
     for (const [id, p] of pending) {
       giveBack(p);
@@ -118,6 +121,7 @@ function onAppMessage(msg) {
       applySettings(msg.settings);
       break;
     case "received": {
+      batchReceipts.get(msg.replyTo)?.({ok:true});
       manualReceipts.get(msg.replyTo)?.(true);
       const p = pending.get(msg.replyTo);
       if (p) {
@@ -130,6 +134,7 @@ function onAppMessage(msg) {
       onDecision(msg.replyTo, msg.decision);
       break;
     case "error":
+      batchReceipts.get(msg.replyTo)?.({ok:false,error:msg.message});
       videoQueries.get(msg.replyTo)?.({ ok: false, error: msg.message });
       lastError = msg.message;
       log("app error:", msg.code, msg.message);
@@ -450,9 +455,33 @@ function mediaUrl(url, pageUrl, tabId, frameId = 0) {
   return list.length === 1 ? list[0].url : pageUrl;
 }
 
+function selectedUrls(text) {
+  if(typeof text!=="string"||text.length>512*1024)return [];
+  const seen=new Set(),urls=[];
+  for(const match of text.matchAll(/(?:https?:\/\/|magnet:\?)[^\s<>"']+/gi)){
+    const raw=match[0].replace(/&amp;/g,"&");
+    try{const u=new URL(raw);if(!["http:","https:","magnet:"].includes(u.protocol)||u.username||u.password)continue;
+      if(u.protocol!=="magnet:")u.hash="";const key=u.href;
+      if(!seen.has(key)){seen.add(key);urls.push(raw);}if(urls.length>1000)return [];
+    }catch{/* Ignore malformed selected text. */}
+  }return urls;
+}
+async function sendBatchLinks(text,pageUrl,incognito){
+  await ready;
+  if(!settings.enabled||pausedHere||incognito&&!settings.includePrivate||siteExcluded(pageUrl))return {ok:false,error:"Link collection is disabled for this page."};
+  const urls=selectedUrls(text);
+  if(!urls.length)return {ok:false,error:"Select up to 1,000 HTTP, HTTPS or magnet links."};
+  const id=`batch-${nextId++}`;
+  const result=new Promise(resolve=>{const timer=setTimeout(()=>finish({ok:false,error:"CrowDM did not respond. Open the app and try again."}),RECEIVE_TIMEOUT_MS);
+    const finish=value=>{clearTimeout(timer);batchReceipts.delete(id);resolve(value);};batchReceipts.set(id,finish);});
+  if(!send({type:"batchLinks",id,text:urls.join("\n"),incognito}))batchReceipts.get(id)?.({ok:false,error:"Could not connect to CrowDM."});
+  return result;
+}
+
 function createMenus() {
   B.contextMenus.removeAll(() => {
     B.contextMenus.create({ id: "crowdm-link", title: "Download with CrowDM", contexts: ["link"] });
+    B.contextMenus.create({ id: "crowdm-selection", title: "Collect selected links with CrowDM", contexts: ["selection"] });
     B.contextMenus.create({ id: "crowdm-media", title: "Download with CrowDM", contexts: ["video", "audio", "image"] });
   });
 }
@@ -461,6 +490,9 @@ B.runtime.onInstalled.addListener(createMenus);
 B.runtime.onStartup?.addListener(createMenus);
 
 B.contextMenus.onClicked.addListener((info, tab) => {
+  if(info.menuItemId==="crowdm-selection"){
+    sendBatchLinks(info.selectionText,info.frameUrl||info.pageUrl||tab?.url,!!tab?.incognito).then(r=>{if(!r.ok)notifyTab(tab,r.error||"CrowDM could not collect these links.");});return;
+  }
   const url = info.menuItemId === "crowdm-link" ? info.linkUrl : info.srcUrl;
   const pageUrl = info.frameUrl || info.pageUrl || tab?.url;
   const video = info.mediaType === "video" || /\.(m3u8|mpd)([?#]|$)/i.test(url || "") || /(^|\.)(youtube\.com|youtu\.be)$/.test(hostOf(url));
@@ -475,6 +507,14 @@ function notifyTab(tab, text) {
 
 B.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg?.type) {
+    case "batchLinks":
+      ready.then(async()=>{
+        const page=sender.url||sender.tab?.url;
+        if(!page||!sender.tab)return sendResponse({ok:false,error:"Select links on a web page first."});
+        if(siteExcluded(sender.tab.url||""))return sendResponse({ok:false,error:"Link collection is disabled for this page."});
+        sendResponse(await sendBatchLinks(msg.text,page,!!sender.tab.incognito));
+      }).catch(()=>sendResponse({ok:false,error:"Could not collect these links."}));
+      return true;
     case "video":
     case "videoOptions":
       ready.then(async () => {

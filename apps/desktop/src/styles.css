@@ -132,6 +132,16 @@
 .select-option.active { background: var(--accent-soft-2); }
 .select-option[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 .select-option[aria-disabled="true"] { opacity: .45; cursor: default; }
+
+.torrent-files { margin: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.torrent-files legend { color: var(--text-2); font-size: 12px; padding: 0 5px; }
+.torrent-file-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+.torrent-file-actions .btn { padding: 3px 7px; font-size: 12px; }
+.torrent-file-list { max-height: 170px; overflow: auto; }
+.torrent-file { display: flex; align-items: center; gap: 8px; padding: 5px 0; min-width: 0; }
+.torrent-file input { accent-color: var(--accent); flex: none; }
+.torrent-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.torrent-file small { color: var(--text-2); flex: none; }
 :root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after { animation: none !important; transition: none !important; }
 
 * {
@@ -1059,3 +1069,41 @@ code {
   margin: 4px 6px;
   background: var(--border);
 }
+
+.grabber { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
+.grabber h2 { margin: 0; }
+.grabber-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.grabber-heading p { margin: 6px 0 0; }
+.grabber-inputs { display: grid; grid-template-columns: minmax(240px, 1.15fr) minmax(200px, 1fr); gap: 20px; }
+.grabber textarea { resize: vertical; min-height: 84px; width: 100%; }
+.grabber .field { margin-bottom: 14px; }
+.grabber .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.grabber-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin: 4px 0 14px; }
+.grabber-controls .input-row { flex: 1; min-width: 260px; }
+.grabber-controls .input-row label { white-space: nowrap; }
+.grabber-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-block: 1px solid var(--border); padding: 12px 0; }
+.grabber-actions > span { flex: 1; min-width: 180px; color: var(--text-2); }
+.package-list { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.package-card { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; }
+.package-card summary { padding: 14px; cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; background: var(--surface-2); }
+.package-card summary strong { overflow-wrap: anywhere; }
+.package-card summary span { color: var(--text-2); font-size: 12px; }
+.package-card .package-name { margin: 12px 14px; max-width: 480px; }
+.package-card .package-name label { display: flex; gap: 12px; align-items: center; white-space: nowrap; }
+.package-card .buttons { padding: 12px; }
+.package-card progress { width: calc(100% - 28px); height: 6px; margin: 12px 14px 0; accent-color: var(--accent); }
+.grabbed-row { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 12px; }
+.grabbed-name { flex: 1; min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grabbed-name small { display: block; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+.link-state { width: 76px; text-transform: capitalize; }
+.link-state.ready { color: var(--ok); }
+.link-state.error { color: var(--danger); }
+.grabber-message { padding: 10px 0; overflow-wrap: anywhere; }
+.update-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--accent-soft); padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.update-banner > span { flex: 1; }
+.update-banner-detail { width: 100%; max-height: 280px; overflow: auto; }
+.release-details { padding: 12px 0; }
+.release-details ul, .extension-steps { padding-left: 22px; line-height: 1.7; }
+.counts-table { width: 100%; max-width: 420px; border-collapse: collapse; }
+.counts-table th, .counts-table td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
+@media (max-width: 1100px) { .grabber-inputs { grid-template-columns: 1fr; } .settings-nav { min-width: 172px; } }

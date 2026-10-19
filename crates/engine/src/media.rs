@@ -418,6 +418,7 @@ pub async fn probe(req: ProbeRequest, settings: &Settings) -> Result<ProbeInfo, 
     let file_name = format!("{}.mkv", title.trim_end_matches('.'));
     let dir = settings.dir_for_category("videos");
     let mut probe = ProbeInfo {
+        torrent: None,
         size_estimated: true,
         media_options: quality_options(&info),
         probe_id: None,

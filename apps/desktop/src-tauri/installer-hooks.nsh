@@ -6,6 +6,8 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; Register available handlers only. Windows keeps the user's default choice.
+  nsExec::ExecToLog '"$INSTDIR\CrowDM.exe" --register-torrent-handlers'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -13,6 +15,13 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\io.github.syst4n.crowdm"
+  DeleteRegValue HKCU "Software\RegisteredApplications" "CrowDM"
+  DeleteRegValue HKCU "Software\Classes\.torrent\OpenWithProgids" "CrowDM.Torrent"
+  DeleteRegValue HKCU "Software\Classes\magnet\OpenWithProgids" "CrowDM.Magnet"
+  DeleteRegKey HKCU "Software\Classes\CrowDM.Torrent"
+  DeleteRegKey HKCU "Software\Classes\CrowDM.Magnet"
+  DeleteRegKey HKCU "Software\Classes\Applications\CrowDM.exe"
   ; Browser integration and autostart entries written by the app (per user).
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.crowdm.host"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.crowdm.host"

@@ -17,6 +17,8 @@ export type ErrorKind =
 export type SourceKind = "browserCapture" | "browserMenu" | "video" | "manual";
 
 export interface Job {
+  package?: string | null;
+  torrent?: TorrentInfo | null;
   mediaDownload: boolean;
   id: string;
   url: string;
@@ -89,6 +91,9 @@ export type Palette = "classic" | "nightwing" | "ocean" | "forest" | "sand" | "r
 export interface Appearance { mode: ColorMode; palette: Palette }
 
 export interface Settings {
+  batch: { monitorClipboard: boolean; groupParts: boolean; skipDuplicates: boolean; quietNotifications: boolean; checkConcurrency: number; maxLinks: number };
+  updates: { checkAutomatically: boolean; dismissedVersion: string | null };
+  torrents: { peerLimit: number; listenPort: number; enableUpnp: boolean; enableUtp: boolean; uploadLimit: number };
   downloadRoot: string;
   organizeByCategory: boolean;
   categories: Category[];
@@ -125,7 +130,16 @@ export interface Settings {
   power: { preventSleepActive: boolean; preventSleepScheduled: boolean; allowSleepResumable: boolean };
 }
 
+export interface TorrentInfo {
+  infoHash: string;
+  files: {index:number;path:string;size:number}[];
+  onlyFiles: number[] | null;
+  multiFile: boolean;
+  private: boolean;
+}
+
 export interface ProbeInfo {
+  torrent: TorrentInfo | null;
   sizeEstimated: boolean;
   mediaOptions: { format: string; label: string; height: number | null; container: string; size: number | null }[];
   probeId: string | null;
@@ -165,6 +179,7 @@ export interface CaptureView {
 }
 
 export interface AcceptOptions {
+  onlyFiles?: number[];
   fileName?: string;
   dir?: string;
   category?: string;
@@ -201,7 +216,19 @@ export interface AppInfo {
 }
 
 export const api = {
+  batchList: () => invoke<LinkInbox>("batch_list"),
+  batchTakeFocus: () => invoke<boolean>("batch_take_focus"),
+  batchAnalyze: (text: string) => invoke<void>("batch_analyze", { text }),
+  batchCollectPage: (url: string) => invoke<void>("batch_collect_page", { url }),
+  batchStop: () => invoke<void>("batch_stop"),
+  batchRemove: (ids: string[]) => invoke<void>("batch_remove", { ids }),
+  batchAccept: (selected: {id: string; package: string}[], root: string, group: boolean) => invoke<{ids: string[]; errors: string[]}>("batch_accept", {selected, root, group}),
+  checkUpdate: () => invoke<AnnouncedUpdate | null>("check_update"),
+  downloadUpdate: () => invoke<string>("download_update"),
+  installUpdate: (id: string) => invoke<void>("install_update", { id }),
+  downloadCounts: () => invoke<DownloadCounts>("download_counts"),
   appInfo: () => invoke<AppInfo>("app_info"),
+  testNotification: () => invoke<void>("test_notification"),
   listJobs: () => invoke<JobSnapshot[]>("list_jobs"),
   jobThumbnail: (id: string) => invoke<string | null>("job_thumbnail", { id }),
   getSettings: () => invoke<Settings>("get_settings"),
@@ -233,10 +260,17 @@ export const api = {
 
   browserStatus: () => invoke<BrowserStatus>("browser_status"),
   registerBrowsers: () => invoke<BrowserStatus>("register_browsers"),
+  registerTorrentHandlers: () => invoke<void>("register_torrent_handlers"),
+  chooseTorrentDefaults: () => invoke<void>("choose_torrent_defaults"),
   openExtensionsFolder: () => invoke<void>("open_extensions_folder"),
   openDataFolder: () => invoke<void>("open_data_folder"),
   memoryUsage: () => invoke<{ pid: number; name: string; privateBytes: number }[]>("memory_usage"),
 };
+
+export interface GrabbedLink { id: string; url: string; fileName: string; package: string; status: "checking"|"unchecked"|"ready"|"error"|"duplicate"; message: string|null; probe: ProbeInfo|null }
+export interface LinkInbox { links: GrabbedLink[]; checking: boolean }
+export interface AnnouncedUpdate { version: string; whatsNew: string[]; installerUrl: string; sha256: string; extensionVersion: string }
+export interface DownloadCounts { total: number; versions: {version: string; downloads: number}[] }
 
 export function onEngine(cb: (e: EngineEvent) => void): Promise<UnlistenFn> {
   return listen<EngineEvent>("engine", (e) => cb(e.payload));
@@ -245,6 +279,8 @@ export function onEngine(cb: (e: EngineEvent) => void): Promise<UnlistenFn> {
 export function onCaptures(cb: (c: CaptureView[]) => void): Promise<UnlistenFn> {
   return listen<CaptureView[]>("captures-changed", (e) => cb(e.payload));
 }
+
+export function onGrabberRequested(cb: () => void): Promise<UnlistenFn> { return listen("open-link-grabber", cb); }
 
 export function onBrowsers(cb: (c: { browser: string; extensionVersion: string }[]) => void): Promise<UnlistenFn> {
   return listen("browsers-changed", (e) => cb(e.payload as { browser: string; extensionVersion: string }[]));

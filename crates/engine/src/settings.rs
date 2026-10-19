@@ -139,7 +139,62 @@ impl Default for PowerManagement {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
+pub struct TorrentSettings {
+    pub peer_limit: usize,
+    pub listen_port: u16,
+    pub enable_upnp: bool,
+    pub enable_utp: bool,
+    pub upload_limit: u64,
+}
+
+impl Default for TorrentSettings {
+    fn default() -> Self {
+        Self { peer_limit: 200, listen_port: 0, enable_upnp: true, enable_utp: true, upload_limit: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BatchSettings {
+    pub monitor_clipboard: bool,
+    pub group_parts: bool,
+    pub skip_duplicates: bool,
+    pub quiet_notifications: bool,
+    pub check_concurrency: usize,
+    pub max_links: usize,
+}
+
+impl Default for BatchSettings {
+    fn default() -> Self {
+        Self {
+            monitor_clipboard: false,
+            group_parts: true,
+            skip_duplicates: true,
+            quiet_notifications: true,
+            check_concurrency: 4,
+            max_links: 500,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UpdateSettings {
+    pub check_automatically: bool,
+    pub dismissed_version: Option<String>,
+}
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { check_automatically: true, dismissed_version: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub batch: BatchSettings,
+    pub updates: UpdateSettings,
+    pub torrents: TorrentSettings,
     /// Root folder; categories are sub-folders of it.
     pub download_root: PathBuf,
     /// Place files into category sub-folders.
@@ -186,6 +241,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            batch: BatchSettings::default(),
+            updates: UpdateSettings::default(),
+            torrents: TorrentSettings::default(),
             download_root: default_download_root(),
             organize_by_category: true,
             categories: default_categories(),
@@ -253,6 +311,12 @@ impl Settings {
     }
     /// Normalizes values that could break the engine.
     pub fn sanitized(mut self) -> Self {
+        self.batch.check_concurrency = self.batch.check_concurrency.clamp(1, 8);
+        self.batch.max_links = self.batch.max_links.clamp(10, 1000);
+        self.torrents.peer_limit = self.torrents.peer_limit.clamp(20, 1000);
+        if self.torrents.upload_limit > 0 {
+            self.torrents.upload_limit = self.torrents.upload_limit.max(16384);
+        }
         self.max_connections_per_download = self.max_connections_per_download.clamp(1, 32);
         self.max_total_connections = self.max_total_connections.clamp(1, 256);
         self.max_active_downloads = self.max_active_downloads.clamp(1, 32);

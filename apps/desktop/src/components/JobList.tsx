@@ -180,7 +180,7 @@ function Row({ id, top, selected, onClick, onContext }: {
         <div className="title" title={j.fileName}>
           {j.fileName}
         </div>
-        <div className="sub">{fmt.host(j.source.pageUrl ?? j.url)}</div>
+          <div className="sub">{j.package ? `${j.package} · ` : ""}{fmt.host(j.source.pageUrl ?? j.url)}</div>
       </div>
       <div className="cell">{j.size != null ? `${j.mediaDownload && j.state !== "completed" ? "≈ " : ""}${fmt.bytes(j.size)}` : j.state === "completed" ? fmt.bytes(j.downloaded) : "Unknown"}</div>
       <ProgressCell j={j} pct={pct} />
@@ -206,7 +206,7 @@ function ProgressCell({ j, pct }: { j: JobSnapshot; pct: number | null }) {
       </div>
       <div className="meta">
         <span>{j.state === "completed" ? "Done" : pct != null ? `${pct.toFixed(pct < 10 ? 1 : 0)}%` : fmt.bytes(j.downloaded)}</span>
-        {j.state === "downloading" && j.connections > 0 && <span>{j.connections} conn</span>}
+          {j.state === "downloading" && j.connections > 0 && <span>{j.connections} {j.torrent ? "peers" : "conn"}</span>}
       </div>
     </div>
   );
